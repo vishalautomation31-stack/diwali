@@ -5,8 +5,8 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js';
-import { makeLine } from './text.js';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=84183a44bc';
+import { makeLine } from './text.js?v=84183a44bc';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
