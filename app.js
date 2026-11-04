@@ -1,109 +1,235 @@
-// Holding page: opens the card named by the key in the address (after '#'),
-// decrypts its words in the browser and shows them. Nothing personal is stored in plain text
-// on the server, and the key never leaves the phone (browsers do not send the part after '#').
+// The page: open the card from the key in the address, show the start screen, then play the
+// sequence on the printed card (camera) or full screen (no camera).
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js';
 
 const $ = (s) => document.querySelector(s);
-const enc = new TextEncoder();
+const show = (el, on = true) => { el.hidden = !on; };
+const params = new URLSearchParams(location.search);
+const DEBUG = params.has('debug');
+const log = (...a) => { if (DEBUG) console.log('[card]', ...a); };
 
-function b64uToBytes(s) {
-  s = s.replace(/-/g, '+').replace(/_/g, '/');
-  while (s.length % 4) s += '=';
-  const bin = atob(s);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+const state = {
+  t: 0,
+  playing: false,
+  began: false,
+  mode: 'start', // start | scanning | ar | free
+  replayShown: false,
+  probe: null,
+};
+
+function fail() {
+  show($('#loader'), false);
+  const b = $('#retry');
+  show(b);
+  b.onclick = () => location.reload();
 }
 
-function readKey() {
-  const h = decodeURIComponent(location.hash.replace(/^#/, ''));
-  const m = h.match(/^(?:k=)?([A-Za-z0-9_-]{22})\b/);
-  if (m) return m[1];
-  const q = new URLSearchParams(location.search).get('k');
-  return q && /^[A-Za-z0-9_-]{22}$/.test(q) ? q : null;
-}
-
-async function cardId(key) {
-  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode('diwali-card:' + key)));
-  return [...h.slice(0, 8)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-async function decrypt(rawKey, buf) {
-  const k = await crypto.subtle.importKey('raw', rawKey, 'AES-GCM', false, ['decrypt']);
-  return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, k, buf.slice(12)));
-}
-
-async function openCard(key) {
-  const id = await cardId(key);
-  const res = await fetch(`c/${id}.bin`, { cache: 'no-cache' });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error('fetch ' + res.status);
-  const plain = await decrypt(b64uToBytes(key), new Uint8Array(await res.arrayBuffer()));
-  return JSON.parse(new TextDecoder().decode(plain));
-}
-
-function stars() {
-  const c = $('#stars');
-  const ctx = c.getContext('2d');
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  let pts = [];
-  function size() {
-    c.width = innerWidth * dpr;
-    c.height = innerHeight * dpr;
-    let seed = 7;
-    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    pts = Array.from({ length: Math.round((innerWidth * innerHeight) / 2600) }, () => ({
-      x: rnd() * c.width,
-      y: rnd() * c.height * 0.78,
-      r: (0.4 + rnd() * 1.1) * dpr,
-      p: rnd() * Math.PI * 2,
-      s: 0.6 + rnd() * 1.6,
-    }));
-  }
-  size();
-  addEventListener('resize', size);
-  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  function frame(t) {
-    ctx.clearRect(0, 0, c.width, c.height);
-    for (const s of pts) {
-      const a = still ? 0.7 : 0.45 + 0.4 * Math.sin(s.p + (t / 1000) * s.s);
-      ctx.fillStyle = `rgba(255, 238, 205, ${a.toFixed(3)})`;
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    if (!still) requestAnimationFrame(frame);
-  }
-  requestAnimationFrame(frame);
-}
-
-function show(card) {
-  $('#name').textContent = card.name;
-  $('#from').textContent = card.from || '';
-  const wish = $('#wish');
-  wish.textContent = '';
-  card.lines.forEach((line, i) => {
+function staticCard(card) {
+  // the card as text: used only when WebGL is unavailable
+  show($('#loader'), false);
+  $('#s-name').textContent = card.name;
+  const w = $('#s-wish');
+  for (const line of card.lines) {
     const p = document.createElement('p');
     p.textContent = line;
-    p.style.animationDelay = `${1.2 + i * 0.9}s`;
-    wish.appendChild(p);
-  });
-  $('#from').style.animationDelay = `${1.2 + card.lines.length * 0.9 + 0.4}s`;
-  $('#mark').style.animationDelay = `${1.2 + card.lines.length * 0.9 + 1.0}s`;
-  $('#card').hidden = false;
-  $('#mark').hidden = false;
+    w.appendChild(p);
+  }
+  $('#s-from').textContent = card.from || '';
+  show($('#static'));
+}
+
+async function requestMotion() {
+  try {
+    const D = window.DeviceOrientationEvent;
+    if (D && typeof D.requestPermission === 'function') await D.requestPermission();
+  } catch {}
 }
 
 async function main() {
-  stars();
   const key = readKey();
-  if (!key) return; // no card in the address: the night sky only
+  if (!key) { show($('#loader'), false); return; }
+
+  let card;
   try {
-    const card = await openCard(key);
-    if (card) show(card);
+    card = await openCard(key);
   } catch (e) {
-    const b = $('#retry');
-    b.hidden = false;
-    b.onclick = () => location.reload();
+    log('open failed', e);
+    return fail();
+  }
+  if (!card) { show($('#loader'), false); return; }
+
+  // three.js and the scene modules load in parallel with the art
+  const modsP = Promise.all([import('./js/stage.js'), import('./js/scene.js'), import('./js/sound.js')]);
+  const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
+  const names = Object.keys(card.assets || {});
+  // Codex's layers 1 to 9, plus the optional near layers 10 to 13, and their shadows
+  const nums = Array.from({ length: 13 }, (_, i) => i + 1);
+  const hasLayers = nums.slice(0, 9).every((n) => names.includes(`layer-${n}.webp`));
+  const byNumber = async (prefix) => {
+    const imgs = await Promise.all(nums.map((n) => (names.includes(`${prefix}-${n}.webp`) ? loadImage(card, `${prefix}-${n}.webp`) : null)));
+    return Object.fromEntries(nums.map((n, i) => [n, imgs[i]]).filter(([, im]) => im));
+  };
+  let poster, sceneInfo, logo, layers = null, shadows = null, handFor = null, handFrom = null, mind = null;
+  try {
+    [poster, sceneInfo, logo, layers, shadows, handFor, handFrom, mind] = await Promise.all([
+      loadImage(card, 'poster.webp'),
+      loadJSON(card, 'scene.json'),
+      new Promise((res) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = 'img/morninglabs-ai.png'; }),
+      hasLayers ? byNumber('layer') : null,
+      hasLayers ? byNumber('shadow') : null,
+      loadImage(card, 'hand-for.png'),
+      loadImage(card, 'hand-from.png'),
+      loadAsset(card, 'target.mind').then((b) => (b ? b.arrayBuffer() : null)),
+    ]);
+  } catch (e) {
+    log('assets failed', e);
+    return fail();
+  }
+  await fontsP;
+
+  let Stage, CardScene, TIMES, Crackle;
+  try {
+    const [m1, m2, m3] = await modsP;
+    ({ Stage } = m1); ({ CardScene, TIMES } = m2); ({ Crackle } = m3);
+  } catch (e) {
+    log('modules failed', e);
+    return fail();
+  }
+
+  let stage, scene;
+  try {
+    stage = new Stage($('#gl'));
+    scene = new CardScene({ card, poster, layers, shadows, sceneInfo, logo, hand: { for: handFor, from: handFrom } });
+  } catch (e) {
+    log('webgl failed', e);
+    return staticCard(card);
+  }
+  stage.setCard(scene);
+  stage.useFree();
+  const sound = new Crackle();
+  log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
+
+  // the camera test runs while the start screen waits
+  const probeP = mind ? import('./js/ar.js').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  probeP.then((p) => { state.probe = p; log('probe', p); });
+
+  // ---------- the loop ----------
+  let last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    if (state.playing && !document.hidden) state.t += dt;
+    scene.introFade = state.mode === 'ar';
+    scene.update(state.began ? state.t : 0, state.playing ? dt : 0, now / 1000);
+    sound.update(state.playing ? scene.crackle : 0, dt);
+    stage.render(state.began ? state.t : 0, now / 1000);
+    if (state.began && state.t > TIMES.end && !state.replayShown) {
+      state.replayShown = true;
+      show($('#replay'));
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  show($('#loader'), false);
+  document.body.classList.add('ready');
+  show($('#start'));
+
+  function begin() {
+    state.t = 0;
+    state.began = true;
+    state.playing = true;
+    state.replayShown = false;
+    scene.reset();
+    show($('#replay'), false);
+  }
+
+  async function playFree() {
+    state.mode = 'free';
+    if (state.ar) { state.ar.stop(); state.ar = null; }
+    document.body.classList.remove('ar');
+    show($('#hint'), false);
+    show($('#nocam'), false);
+    stage.useFree();
+    stage.enableTilt();
+    begin();
+  }
+
+  $('#start').onclick = async () => {
+    show($('#start'), false);
+    document.body.classList.add('started');
+    sound.start();
+    show($('#sound'));
+    const p = state.probe || (await Promise.race([probeP, new Promise((r) => setTimeout(() => r({ ok: false, note: 'probe slow' }), 6000))]));
+    if (!p.ok || params.has('nocam')) {
+      await requestMotion();
+      return playFree();
+    }
+    // camera
+    state.mode = 'scanning';
+    document.body.classList.add('ar');
+    show($('#hint'));
+    const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
+    const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
+    try {
+      const { CameraAR } = await import('./js/ar.js');
+      state.ar = new CameraAR({
+        container: $('#cam'),
+        stage,
+        mind,
+        onFound: () => {
+          show($('#hint'), false);
+          show($('#nocam'), false);
+          clearTimeout(state.lostTimer);
+          if (!state.began) { state.mode = 'ar'; begin(); }
+          state.playing = true;
+        },
+        onLost: () => {
+          state.playing = false; // the sequence waits for the card
+          state.lostTimer = setTimeout(() => { if (state.mode === 'ar' || state.mode === 'scanning') show($('#hint')); }, 1200);
+        },
+      });
+      await state.ar.start();
+    } catch (e) {
+      log('camera failed', e);
+      clearTimeout(offerTimer);
+      document.body.classList.remove('ar');
+      show($('#hint'), false);
+      stage.useFree();
+      offer();
+    }
+  };
+
+  $('#nocam').onclick = async () => {
+    await requestMotion();
+    playFree();
+  };
+
+  $('#replay').onclick = () => begin();
+
+  $('#sound').onclick = () => {
+    const on = $('#sound').getAttribute('aria-pressed') !== 'true';
+    $('#sound').setAttribute('aria-pressed', String(on));
+    sound.setMuted(!on);
+  };
+
+  if (DEBUG) {
+    window.__card = { state, scene, stage, card: { name: card.name, lines: card.lines, assets: names } };
+    // Freeze at time t (seconds), optionally running the particles up to it, and save the canvas
+    // to the local dev server (tools/serve.mjs writes it to private/out/). Local checks only.
+    window.__snap = async (t, name, warm = 1.2) => {
+      state.playing = false;
+      state.began = true;
+      scene.reset();
+      const step = 1 / 60;
+      for (let s = Math.max(0, t - warm); s < t; s += step) scene.update(s, step, s);
+      state.t = t;
+      scene.update(t, 0, t);
+      stage.render(t, t);
+      const blob = await new Promise((r) => $('#gl').toBlob(r, 'image/png'));
+      const res = await fetch('/__save?name=' + encodeURIComponent(name), { method: 'POST', body: blob });
+      return res.text();
+    };
   }
 }
 
