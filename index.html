@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#1b1446">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob:; media-src 'self' blob: mediastream:; worker-src 'self' blob:; base-uri 'none'; form-action 'none'">
+<title>Happy Diwali</title>
+<link rel="preload" href="fonts/teko-latin-600-clean.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/eczar-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main id="stage">
+  <canvas id="stars" aria-hidden="true"></canvas>
+  <section id="card" hidden>
+    <h1 id="name" class="name"></h1>
+    <div id="wish" class="wish"></div>
+    <p id="from" class="from"></p>
+  </section>
+  <button id="retry" class="retry" type="button" hidden aria-label="Try again">&#8635;</button>
+  <footer id="mark" class="mark" hidden><img src="img/morninglabs-ai.png" alt="MorningLabs AI" width="131" height="29"></footer>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

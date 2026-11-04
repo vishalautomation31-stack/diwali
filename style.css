@@ -1,0 +1,121 @@
+@font-face {
+  font-family: "Teko";
+  font-weight: 600;
+  font-style: normal;
+  font-display: block;
+  src: url("fonts/teko-latin-600-clean.woff2") format("woff2"), url("fonts/teko-latin-600-normal.woff") format("woff");
+}
+@font-face {
+  font-family: "Eczar";
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url("fonts/eczar-latin-400-normal.woff2") format("woff2"), url("fonts/eczar-latin-400-normal.woff") format("woff");
+}
+
+:root {
+  --night-0: #120d33;
+  --night-1: #1b1446;
+  --night-2: #2b2066;
+  --marigold: #f6ad2b;
+  --saffron: #f2862b;
+  --warm-white: #fff3dc;
+  --pink: #e9467a;
+  --logo-ground: #0b0b0f; /* sampled from the logo file's own ground, so the mark sits on it unchanged */
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  background: var(--night-1);
+  color: var(--warm-white);
+  font-family: "Eczar", Georgia, serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(120% 70% at 50% 108%, rgba(242, 134, 43, 0.28), transparent 60%),
+    linear-gradient(180deg, var(--night-0) 0%, var(--night-1) 45%, var(--night-2) 100%);
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+}
+
+#stars { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+.card-text, #card {
+  position: relative;
+  width: min(100%, 560px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: clamp(18px, 4vh, 36px);
+}
+
+.name {
+  font-family: "Teko", sans-serif;
+  font-weight: 600;
+  font-size: clamp(96px, min(44vw, 26vh), 260px);
+  line-height: 0.82;
+  letter-spacing: 0.02em;
+  color: transparent;
+  -webkit-text-stroke: clamp(1.5px, 0.5vw, 3px) var(--marigold);
+  text-shadow: 0 0 18px rgba(246, 173, 43, 0.45);
+  opacity: 0;
+  animation: rise 1.4s cubic-bezier(.2, .7, .2, 1) 0.2s forwards;
+}
+
+.wish { display: flex; flex-direction: column; gap: 0.55em; }
+.wish p {
+  font-size: clamp(19px, 5.2vw, 26px);
+  line-height: 1.35;
+  text-wrap: balance;
+  opacity: 0;
+  animation: rise 1.1s cubic-bezier(.2, .7, .2, 1) forwards;
+  text-shadow: 0 1px 12px rgba(18, 13, 51, 0.9);
+}
+
+.from {
+  font-size: clamp(17px, 4.4vw, 22px);
+  color: var(--marigold);
+  opacity: 0;
+  animation: rise 1.1s cubic-bezier(.2, .7, .2, 1) forwards;
+}
+
+.mark {
+  position: absolute;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: var(--logo-ground);
+  padding: 6px 8px;
+  border-radius: 4px;
+  line-height: 0;
+  opacity: 0;
+  animation: fade 1.2s ease forwards;
+}
+.mark img { width: 104px; height: auto; display: block; }
+
+.retry {
+  position: relative;
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  border: 1.5px solid var(--marigold);
+  background: transparent;
+  color: var(--marigold);
+  font-size: 26px;
+  cursor: pointer;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .name, .wish p, .from, .mark { animation-duration: 0.01s !important; animation-delay: 0s !important; }
+}
