@@ -104,11 +104,23 @@ export class CameraAR {
     this.post = new THREE.Matrix4().compose(new THREE.Vector3(w / 2, w / 2 + (h - w) / 2, 0), new THREE.Quaternion(), new THREE.Vector3(w, w, w));
     this.stage.useAR();
     this.stage.setARProjection(this.controller.getProjectionMatrix(), vw, vh, video);
-    this.controller.dummyRun(video);
-    this.controller.processVideo(video);
+    // The tracker reads a canvas copy of each camera frame, not the video element: reading video
+    // straight into WebGL comes back black on some browsers (older iPhones; a hidden test tab).
+    const frame = document.createElement('canvas');
+    frame.width = vw;
+    frame.height = vh;
+    const g = frame.getContext('2d');
+    const pump = () => {
+      if (video.readyState >= 2) g.drawImage(video, 0, 0, vw, vh);
+      this.raf = requestAnimationFrame(pump);
+    };
+    pump();
+    this.controller.dummyRun(frame);
+    this.controller.processVideo(frame);
   }
 
   stop() {
+    if (this.raf) cancelAnimationFrame(this.raf);
     try { this.controller && this.controller.stopProcessVideo(); } catch {}
     try { this.controller && this.controller.dispose(); } catch {}
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());

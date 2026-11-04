@@ -62,7 +62,13 @@ export async function loadAsset(card, name) {
   if (!a) return null;
   const buf = await fetchBytes(a.url);
   if (!buf) return null;
-  const plain = await decrypt(b64uToBytes(card.assetsKey), buf);
+  let plain = await decrypt(b64uToBytes(card.assetsKey), buf);
+  if (a.gz) {
+    // the tracking target travels gzipped; a browser that cannot unzip skips the camera version
+    if (typeof DecompressionStream === 'undefined') return null;
+    const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'));
+    plain = new Uint8Array(await new Response(stream).arrayBuffer());
+  }
   const ext = name.split('.').pop();
   return new Blob([plain], { type: TYPES[ext] || 'application/octet-stream' });
 }

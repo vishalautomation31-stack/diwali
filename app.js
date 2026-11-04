@@ -46,6 +46,9 @@ async function requestMotion() {
 }
 
 async function main() {
+  // local test only: a fake camera from tools/dev (never on the live site)
+  if (DEBUG && params.has('fakecam') && ['localhost', '127.0.0.1'].includes(location.hostname))
+    await (await import('/dev/fakecam.js')).installFakeCam(params.get('fakecam'));
   const key = readKey();
   if (!key) { show($('#loader'), false); return; }
 
