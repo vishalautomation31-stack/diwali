@@ -5,8 +5,8 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=84183a44bc';
-import { makeLine } from './text.js?v=84183a44bc';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=fc7076ce77';
+import { makeLine } from './text.js?v=fc7076ce77';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -85,6 +85,7 @@ export class CardScene {
 
   _buildLayers(poster, layers, shadows) {
     this.layers = [];
+    this.layerImgs = layers || {};
     const geo = new THREE.PlaneGeometry(1, CARD_H);
     const have = layers ? DRAW_ORDER.filter((n) => layers[n]) : [];
     if (have.length >= 9) {
@@ -318,14 +319,86 @@ export class CardScene {
     this.content.add(this.fromMesh);
   }
 
+  // The MorningLabs AI mark, cut out of its near-black ground (tools/prepare_logo.py: every pixel
+  // keeps its colour), in pieces so its three dots can light one after another and breathe.
   _buildLogo(logo) {
     const at = this.card.style.logoAt;
-    if (!logo) return;
-    const h = (at.w * logo.height) / logo.width;
-    this.logo = new THREE.Mesh(new THREE.PlaneGeometry(at.w, h), new THREE.MeshBasicMaterial({ map: this._tex(logo), transparent: true, opacity: 0, depthWrite: false, toneMapped: false }));
-    this.logo.position.set(at.x, at.y, 0.004);
-    this.logo.renderOrder = 90;
-    this.root.add(this.logo);
+    if (!logo || !logo.layout) return;
+    const [W, H] = logo.layout.size; // the original file, 262 x 58
+    const s = at.w / W; // card units per pixel of the original
+    const g = new THREE.Group();
+    g.position.set(at.x, at.y, 0.004);
+    const tex = (img) => {
+      const t = this._tex(img);
+      t.generateMipmaps = false;
+      t.minFilter = THREE.LinearFilter;
+      return t;
+    };
+    const place = (mesh, box, order) => {
+      const [x0, y0, x1, y1] = box;
+      mesh.position.set(((x0 + x1) / 2 - W / 2) * s, -((y0 + y1) / 2 - H / 2) * s, 0);
+      mesh.renderOrder = order;
+      g.add(mesh);
+      return mesh;
+    };
+    const wb = logo.layout.word.box;
+    this.logoWord = place(new THREE.Mesh(new THREE.PlaneGeometry((wb[2] - wb[0]) * s, (wb[3] - wb[1]) * s), this._writeMaterial(tex(logo.word))), wb, 92);
+    this.logoWord.visible = false;
+    const glowTex = radialTexture([[0, 'rgba(54,211,153,0.9)'], [0.25, 'rgba(54,211,153,0.35)'], [1, 'rgba(54,211,153,0)']], 64);
+    this.logoDots = logo.dots.map((img, k) => {
+      const b = logo.layout.dots[k].box;
+      const mesh = place(new THREE.Mesh(new THREE.PlaneGeometry((b[2] - b[0]) * s, (b[3] - b[1]) * s), new THREE.MeshBasicMaterial({ map: tex(img), transparent: true, opacity: 0, depthWrite: false, toneMapped: false })), b, 93);
+      const glow = glowQuad(glowTex, Math.max(b[2] - b[0], b[3] - b[1]) * s * 7, '#ffffff', 91);
+      glow.position.copy(mesh.position);
+      g.add(glow);
+      return { mesh, glow, k };
+    });
+    this.root.add(g);
+    this.logoGroup = g;
+    // the mark rides on the front-most layer that covers the band under it, so the lifted
+    // layers never slide over it (which layer holds the band depends on Codex's cut)
+    this.logoLayer = this._coveringLayer([[at.x - at.w * 0.35, at.y], [at.x, at.y], [at.x + at.w * 0.35, at.y]]);
+  }
+
+  _coveringLayer(points) {
+    if (!this.layered) return 0;
+    const c = document.createElement('canvas');
+    c.width = c.height = 1;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    let front = 1;
+    for (const L of this.layers) {
+      const img = this.layerImgs[L.n];
+      if (!img || L.lit) continue;
+      for (const [x, y] of points) {
+        g.clearRect(0, 0, 1, 1);
+        g.drawImage(img, (x + 0.5) * img.width, (0.5 - y / CARD_H) * img.height, 1, 1, 0, 0, 1, 1);
+        if (g.getImageData(0, 0, 1, 1).data[3] > 160 && LAYER_Z[L.n] >= LAYER_Z[front]) front = L.n;
+      }
+    }
+    return front;
+  }
+
+  _logo(t, time) {
+    if (!this.logoGroup) return;
+    const t0 = TIMES.logo[0];
+    const live = t > t0 + 1.4;
+    this.logoGroup.position.z = this._layerZ(this.logoLayer, t) + 0.006;
+    for (const d of this.logoDots) {
+      const s0 = t0 + d.k * 0.18; // left to right, smallest first
+      const on = clamp01((t - s0) / 0.15);
+      const pop = Math.max(0.001, easeBack((t - s0) / 0.4));
+      const flash = on * Math.exp(-Math.max(0, t - s0) * 3.0);
+      const breathe = live ? 0.5 + 0.5 * Math.sin(time * 2.4 - d.k * 0.95) : 0;
+      const sc = pop * (1 + 0.1 * breathe);
+      d.mesh.scale.set(sc, sc, 1);
+      d.mesh.material.opacity = on;
+      d.glow.material.opacity = on * (0.16 + 0.55 * flash + 0.22 * breathe) * (0.55 + 0.25 * d.k);
+      const gs = 0.7 + 0.5 * flash + 0.25 * breathe;
+      d.glow.scale.set(gs, gs, 1);
+    }
+    const wp = clamp01((t - (t0 + 0.55)) / 0.8);
+    this.logoWord.visible = wp > 0;
+    this.logoWord.material.uniforms.uP.value = wp;
   }
 
   // ---------- run ----------
@@ -411,7 +484,7 @@ export class CardScene {
     // 6. "from Vishal", then the mark
     const wp = clamp01((t - TIMES.fromWrite[0]) / (TIMES.fromWrite[1] - TIMES.fromWrite[0]));
     this._write(this.fromMesh, wp, t > TIMES.fromWrite[0] - 0.01, true);
-    if (this.logo) this.logo.material.opacity = smooth(TIMES.logo[0], TIMES.logo[1], t);
+    this._logo(t, time);
 
     // 7. the light stream (one choreography), the children's sparklers, far fireworks, idle embers
     if (ch === 'stream') this._stream(t);
