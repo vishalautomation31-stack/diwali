@@ -1,7 +1,7 @@
 // One renderer for both versions. No camera: the card floats full screen in the night and tilts
 // with the phone. Camera: the card's group is pinned to the printed card by the tracker.
 import * as THREE from '../lib/three.module.min.js';
-import { CARD_H } from './scene.js?v=fc7076ce77';
+import { CARD_H } from './scene.js?v=0ebcf90f1c';
 
 export class Stage {
   constructor(canvas) {

@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=fc7076ce77';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=0ebcf90f1c';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -62,7 +62,7 @@ async function main() {
   if (!card) { show($('#loader'), false); return; }
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=fc7076ce77'), import('./js/scene.js?v=fc7076ce77'), import('./js/sound.js?v=fc7076ce77')]);
+  const modsP = Promise.all([import('./js/stage.js?v=0ebcf90f1c'), import('./js/scene.js?v=0ebcf90f1c'), import('./js/sound.js?v=0ebcf90f1c')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, plus the optional near layers 10 to 13, and their shadows
@@ -75,7 +75,7 @@ async function main() {
   let poster, sceneInfo, logo, layers = null, shadows = null, handFor = null, handFrom = null, mind = null;
   try {
     [poster, sceneInfo, logo, layers, shadows, handFor, handFrom, mind] = await Promise.all([
-      loadImage(card, 'poster.webp'),
+      hasLayers ? null : loadImage(card, 'poster.webp'), // the layers replace the flat poster
       loadJSON(card, 'scene.json'),
       // the MorningLabs AI mark, cut out and in pieces (tools/prepare_logo.py)
       (async () => {
@@ -120,7 +120,7 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = mind ? import('./js/ar.js?v=fc7076ce77').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = mind ? import('./js/ar.js?v=0ebcf90f1c').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
 
   // ---------- the loop ----------
@@ -182,7 +182,7 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=fc7076ce77');
+      const { CameraAR } = await import('./js/ar.js?v=0ebcf90f1c');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,
