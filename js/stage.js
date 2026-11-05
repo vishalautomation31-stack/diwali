@@ -1,7 +1,7 @@
 // One renderer for both versions. No camera: the card floats full screen in the night and tilts
 // with the phone. Camera: the card's group is pinned to the printed card by the tracker.
 import * as THREE from '../lib/three.module.min.js';
-import { CARD_H } from './scene.js?v=f4fccf2e73';
+import { CARD_H } from './scene.js?v=6274618468';
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 
@@ -17,10 +17,6 @@ export class Stage {
     this.anchor.matrixAutoUpdate = false;
     this.free = new THREE.Group(); // no-camera version
     this.scene.add(this.anchor, this.free);
-    this.hud = new THREE.Group(); // camera version: the wish, steady on screen
-    this.hud.visible = false;
-    this.camera.add(this.hud);
-    this.scene.add(this.camera);
     this.arScale = 1;
     this.mode = 'idle';
     this.tilt = { yaw: 0, pitch: 0, ty: 0, tp: 0, base: null, sensor: false };
@@ -72,12 +68,11 @@ export class Stage {
   useFree() {
     this.mode = 'free';
     this.free.visible = true;
-    this.hud.visible = false;
     this.anchor.visible = false;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     if (this.card) {
       this.free.add(this.card.root);
-      this.card.attachWords(null);
+      this.card.setCameraMode(false);
       this.card.setShear(0, 0);
     }
     this.camera.matrixAutoUpdate = true;
@@ -135,10 +130,9 @@ export class Stage {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
     if (this.card) {
       this.anchor.add(this.card.root);
-      this.card.attachWords(this.hud);
+      this.card.setCameraMode(true);
     }
     this.anchor.visible = false;
-    this.hud.visible = false;
     this.camera.position.set(0, 0, 0);
     this.camera.quaternion.identity();
     this.camera.updateMatrixWorld(true);
@@ -154,22 +148,10 @@ export class Stage {
   setCardPose(p, q, s) {
     this.anchor.matrix.compose(_p.set(p[0], p[1], p[2]), _q.set(q[0], q[1], q[2], q[3]), _s.set(s, s, s));
     this.anchor.visible = true;
-    this.hud.visible = true;
   }
 
   hideCard() {
     this.anchor.visible = false;
-    this.hud.visible = false;
-  }
-
-  // The wish in camera mode: x, y in CSS pixels from the screen centre (y up), u = CSS pixels per
-  // card width, leaning by rx, ry radians.
-  placeWords(x, y, u, rx, ry) {
-    const D = 1000; // any distance: nothing here uses the depth buffer
-    const k = (2 * D * Math.tan((this.camera.fov * Math.PI) / 360)) / innerHeight;
-    this.hud.position.set(x * k, y * k, -D);
-    this.hud.scale.setScalar(u * k);
-    this.hud.rotation.set(rx, ry, 0);
   }
 
   resize() {

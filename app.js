@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=f4fccf2e73';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=6274618468';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -62,7 +62,7 @@ async function main() {
   if (!card) { show($('#loader'), false); return; }
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=f4fccf2e73'), import('./js/scene.js?v=f4fccf2e73'), import('./js/sound.js?v=f4fccf2e73')]);
+  const modsP = Promise.all([import('./js/stage.js?v=6274618468'), import('./js/scene.js?v=6274618468'), import('./js/sound.js?v=6274618468')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, plus the optional near layers 10 to 13, and their shadows
@@ -120,7 +120,7 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = mind ? import('./js/ar.js?v=f4fccf2e73').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = mind ? import('./js/ar.js?v=6274618468').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
 
   // ---------- the loop ----------
@@ -158,7 +158,7 @@ async function main() {
   async function playFree() {
     state.mode = 'free';
     if (state.ar) { state.ar.stop(); state.ar = null; }
-    document.body.classList.remove('ar');
+    document.body.classList.remove('ar', 'lit');
     show($('#hint'), false);
     show($('#nocam'), false);
     stage.useFree();
@@ -183,18 +183,20 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=f4fccf2e73');
+      const { CameraAR } = await import('./js/ar.js?v=6274618468');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,
         mind,
         rawPose: DEBUG && params.has('rawpose'),
+        stats: params.has('stats'),
         onError: (e) => {
           log('tracking failed', e);
           state.mode = 'scanning';
           offer();
         },
         onFound: () => {
+          document.body.classList.add('lit'); // the room dims as the card comes alive
           show($('#hint'), false);
           show($('#nocam'), false);
           clearTimeout(state.lostTimer);
@@ -202,6 +204,7 @@ async function main() {
           state.playing = true;
         },
         onLost: () => {
+          document.body.classList.remove('lit');
           state.playing = false; // the sequence waits for the card
           state.lostTimer = setTimeout(() => { if (state.mode === 'ar' || state.mode === 'scanning') show($('#hint')); }, 1200);
         },

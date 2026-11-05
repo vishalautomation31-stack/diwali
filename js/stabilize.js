@@ -50,12 +50,18 @@ function relDist(a, b) {
 export const SETTINGS = {
   // time constants in seconds: slow when the difference looks like tracker noise, fast when it is
   // clearly real movement. With the sensor doing the fast work, the tracker's pull can be gentler.
-  sensor: { slowP: 0.2, fastP: 0.05, slowR: 0.7, fastR: 0.1 },
-  vision: { slowP: 0.13, fastP: 0.035, slowR: 0.16, fastR: 0.04 },
+  sensor: { slowP: 0.2, fastP: 0.08, slowR: 0.8, fastR: 0.16 },
+  vision: { slowP: 0.13, fastP: 0.04, slowR: 0.16, fastR: 0.05 },
   e0P: 0.004, e1P: 0.016, // relative position error: noise below e0, real movement above e1
   e0R: 0.025, e1R: 0.09, // rotation error in radians (about 1.4 and 5 degrees)
-  tail: 0.045, // a short second stage: takes the corners out of the motion
+  tail: 0.05, // a short second stage: takes the corners out of the motion
   jumpP: 0.09, jumpR: 0.3, // a single estimate this far off must be confirmed by the next one
+  // While the phone turns, the tracker is at its least reliable (blur, a moving picture) and the
+  // sensor at its best: the tracker's pull eases off, half strength at this speed (radians a second).
+  turning: 0.7,
+  // However wrong the pose, it is corrected at a rate, never in one step (per second; the allowed
+  // rate grows with the error so a big miss still closes quickly).
+  rateP: 0.25, rateR: 0.5,
 };
 
 export class PoseStabilizer {
@@ -105,14 +111,19 @@ export class PoseStabilizer {
   }
 
   // Every drawn frame.
-  step(dt) {
+  // omega: how fast the phone is turning, radians a second (from the sensor)
+  step(dt, omega = 0) {
     if (!this.target) return null;
     const s = this.s, set = this.sensor ? s.sensor : s.vision;
     const { target: T, mid: M, shown: S } = this;
     const eP = relDist(T.p, M.p), eR = qAngle(T.q, M.q);
     const tauP = set.slowP + (set.fastP - set.slowP) * smooth(s.e0P, s.e1P, eP);
     const tauR = set.slowR + (set.fastR - set.slowR) * smooth(s.e0R, s.e1R, eR);
-    const aP = 1 - Math.exp(-dt / tauP), aR = 1 - Math.exp(-dt / tauR), aT = 1 - Math.exp(-dt / s.tail);
+    const trust = this.sensor ? 1 / (1 + (omega / s.turning) ** 2) : 1;
+    let aP = (1 - Math.exp(-dt / tauP)) * trust, aR = (1 - Math.exp(-dt / tauR)) * trust;
+    const aT = 1 - Math.exp(-dt / s.tail);
+    if (eP > 0) aP = Math.min(aP, ((s.rateP + 3 * eP) * dt) / eP);
+    if (eR > 0) aR = Math.min(aR, ((s.rateR + 3 * eR) * dt) / eR);
     for (let i = 0; i < 3; i++) {
       M.p[i] += (T.p[i] - M.p[i]) * aP;
       S.p[i] += (M.p[i] - S.p[i]) * aT;

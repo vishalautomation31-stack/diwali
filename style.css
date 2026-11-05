@@ -52,6 +52,31 @@ body.ar .night { display: none; }
 
 .cam { position: absolute; inset: 0; overflow: hidden; }
 .cam video { position: absolute; object-fit: fill; }
+/* the room dims as the card comes alive, so the card is the world and small mismatches do not show */
+.cam::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(90% 70% at 50% 50%, rgba(8, 6, 26, 0.62), rgba(8, 6, 26, 0.9));
+  opacity: 0;
+  transition: opacity 0.9s ease;
+  pointer-events: none;
+}
+body.lit .cam::after { opacity: 1; }
+
+/* a test link only (?stats) */
+.stats {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: max(8px, env(safe-area-inset-bottom));
+  font: 11px/1.35 ui-monospace, Menlo, Consolas, monospace;
+  color: #bdf;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 4px 6px;
+  border-radius: 4px;
+  pointer-events: none !important;
+}
 
 .gl { position: absolute; inset: 0; display: block; touch-action: none; }
 

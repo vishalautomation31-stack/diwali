@@ -5,8 +5,8 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=f4fccf2e73';
-import { makeLine } from './text.js?v=f4fccf2e73';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=6274618468';
+import { makeLine } from './text.js?v=6274618468';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -83,15 +83,11 @@ export class CardScene {
     this.content.matrix.set(1, 0, sx, 0, 0, 1, sy, 0, 0, 0, 1, 0, 0, 0, 0, 1);
   }
 
-  // The wish: part of the card (no camera), or steady on screen under parent (camera).
-  attachWords(parent) {
-    if (parent) {
-      parent.add(this.words);
-      this.words.position.set(0, 0, 0);
-    } else {
-      this.content.add(this.words);
-      this.words.position.set(this.textX, this.textY, this.textZ);
-    }
+  // Camera mode: the wish lies on the art, in the sky under the name, tilting with the card, and a
+  // soft dark edge covers the real card's paper edge. No camera: the wish floats a little more.
+  setCameraMode(on) {
+    this.words.position.set(this.textX, this.textY, on ? 0.03 : 0.12);
+    this.plate.visible = on;
   }
 
   // ---------- build ----------
@@ -317,7 +313,6 @@ export class CardScene {
 
   _buildWords(hand) {
     const st = this.card.style;
-    this.textZ = 0.26; // in front of the nearest layer (0.12 x depth)
     // "for", above the name: only in Vishal's hand, never a typed stand-in (the print leaves it out too)
     if (hand?.for) {
       this.forMesh = this._handOrLabel(hand.for, 'for', st.forAt.h);
@@ -350,11 +345,30 @@ export class CardScene {
     this.fromMesh = this._handOrLabel(hand?.from, this.card.from || 'from Vishal', st.fromAt.h);
     this.fromMesh.position.set(st.fromAt.x - this.textX, st.fromAt.y - this.textY, 0);
     this.words.add(this.fromMesh);
-    this.attachWords(null);
+    this.content.add(this.words);
+    this._buildPlate();
+    this.setCameraMode(false);
   }
 
   // The MorningLabs AI mark, cut out of its near-black ground (tools/prepare_logo.py: every pixel
   // keeps its colour), in pieces so its three dots can light one after another and breathe.
+  _buildPlate() {
+    const c = document.createElement('canvas');
+    c.width = 260;
+    c.height = 340; // the plate is 1.3 x 1.7 card widths: 200 pixels to a card width
+    const g = c.getContext('2d');
+    g.shadowColor = '#0a0824';
+    g.shadowBlur = 26;
+    g.fillStyle = '#0a0824';
+    g.fillRect(27, 27, 206, 286);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.plate = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.7), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, toneMapped: false }));
+    this.plate.position.z = -0.002;
+    this.plate.renderOrder = 5;
+    this.root.add(this.plate);
+  }
+
   _buildLogo(logo) {
     const at = this.card.style.logoAt;
     if (!logo || !logo.layout) return;
@@ -466,6 +480,7 @@ export class CardScene {
     const night = this._night(t);
     for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.setScalar(night);
     const enter = this.introFade ? smooth(0, 0.35, t) : 1; // camera: fade the render in over the print
+    this.plate.material.opacity = enter;
     for (const l of this.layers) {
       if (l.lit) l.mesh.material.uniforms.uOpacity.value = enter;
       else l.mesh.material.opacity = enter;
