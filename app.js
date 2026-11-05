@@ -182,6 +182,7 @@ async function main() {
     show($('#start'), false);
     document.body.classList.add('started');
     sound.start();
+    if (card.show?.music) sound.prepareMusic();
     show($('#sound'));
     const p = state.probe || (await Promise.race([probeP, new Promise((r) => setTimeout(() => r({ ok: false, note: 'probe slow' }), 6000))]));
     await motionP;
