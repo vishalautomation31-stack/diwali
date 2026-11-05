@@ -1,7 +1,9 @@
 // One renderer for both versions. No camera: the card floats full screen in the night and tilts
 // with the phone. Camera: the card's group is pinned to the printed card by the tracker.
 import * as THREE from '../lib/three.module.min.js';
-import { CARD_H } from './scene.js?v=45b59df55d';
+import { CARD_H } from './scene.js?v=f4fccf2e73';
+
+const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 
 export class Stage {
   constructor(canvas) {
@@ -15,6 +17,11 @@ export class Stage {
     this.anchor.matrixAutoUpdate = false;
     this.free = new THREE.Group(); // no-camera version
     this.scene.add(this.anchor, this.free);
+    this.hud = new THREE.Group(); // camera version: the wish, steady on screen
+    this.hud.visible = false;
+    this.camera.add(this.hud);
+    this.scene.add(this.camera);
+    this.arScale = 1;
     this.mode = 'idle';
     this.tilt = { yaw: 0, pitch: 0, ty: 0, tp: 0, base: null, sensor: false };
     this._stars();
@@ -65,7 +72,14 @@ export class Stage {
   useFree() {
     this.mode = 'free';
     this.free.visible = true;
-    if (this.card) this.free.add(this.card.root);
+    this.hud.visible = false;
+    this.anchor.visible = false;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    if (this.card) {
+      this.free.add(this.card.root);
+      this.card.attachWords(null);
+      this.card.setShear(0, 0);
+    }
     this.camera.matrixAutoUpdate = true;
     this.resize();
   }
@@ -113,11 +127,18 @@ export class Stage {
   }
 
   // ---------- camera ----------
-  useAR() {
+  useAR(scale) {
     this.mode = 'ar';
+    this.arScale = scale;
     this.free.visible = false;
-    if (this.card) this.anchor.add(this.card.root);
+    // a little less detail than the no-camera version: the tracker shares the phone's GPU
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    if (this.card) {
+      this.anchor.add(this.card.root);
+      this.card.attachWords(this.hud);
+    }
     this.anchor.visible = false;
+    this.hud.visible = false;
     this.camera.position.set(0, 0, 0);
     this.camera.quaternion.identity();
     this.camera.updateMatrixWorld(true);
@@ -129,16 +150,26 @@ export class Stage {
     this.resize();
   }
 
-  setAnchor(worldMatrix, postMatrix) {
-    if (!worldMatrix) {
-      this.anchor.visible = false;
-      return;
-    }
-    const m = new THREE.Matrix4();
-    m.elements = [...worldMatrix];
-    m.multiply(postMatrix);
-    this.anchor.matrix.copy(m);
+  // where the card is now, in camera space
+  setCardPose(p, q, s) {
+    this.anchor.matrix.compose(_p.set(p[0], p[1], p[2]), _q.set(q[0], q[1], q[2], q[3]), _s.set(s, s, s));
     this.anchor.visible = true;
+    this.hud.visible = true;
+  }
+
+  hideCard() {
+    this.anchor.visible = false;
+    this.hud.visible = false;
+  }
+
+  // The wish in camera mode: x, y in CSS pixels from the screen centre (y up), u = CSS pixels per
+  // card width, leaning by rx, ry radians.
+  placeWords(x, y, u, rx, ry) {
+    const D = 1000; // any distance: nothing here uses the depth buffer
+    const k = (2 * D * Math.tan((this.camera.fov * Math.PI) / 360)) / innerHeight;
+    this.hud.position.set(x * k, y * k, -D);
+    this.hud.scale.setScalar(u * k);
+    this.hud.rotation.set(rx, ry, 0);
   }
 
   resize() {
@@ -156,10 +187,9 @@ export class Stage {
       video.style.height = dh + 'px';
       video.style.left = -(dw - w) / 2 + 'px';
       video.style.top = -(dh - h) / 2 + 'px';
+      // the view that shows the tracker's frame the way the video is shown (same aspect, so cover)
       const ia = inputW / inputH;
-      const scale = ia > ca ? vw / inputW : vh / inputH;
-      let fh;
-      if (ia > ca) fh = h * scale; else fh = (w / inputW) * inputH * scale;
+      const fh = ia > ca ? h : (w / inputW) * inputH;
       const ratio = h / fh;
       this.camera.fov = (2 * Math.atan((1 / m[5]) * ratio) * 180) / Math.PI;
       this.camera.near = m[14] / (m[10] - 1);
@@ -187,7 +217,8 @@ export class Stage {
   render(t, time) {
     if (this.mode === 'free') this._freeCamera(t, time);
     this.starMat.uniforms.uTime.value = time;
-    if (this.card) this.card.pointScale = this.pointScale;
+    // sparks are sized in card units; in camera mode a card unit is the tracker's image width
+    if (this.card) this.card.pointScale = this.pointScale * (this.mode === 'ar' ? this.arScale : 1);
     this.renderer.render(this.scene, this.camera);
   }
 }

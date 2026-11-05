@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=45b59df55d';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=f4fccf2e73';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -62,7 +62,7 @@ async function main() {
   if (!card) { show($('#loader'), false); return; }
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=45b59df55d'), import('./js/scene.js?v=45b59df55d'), import('./js/sound.js?v=45b59df55d')]);
+  const modsP = Promise.all([import('./js/stage.js?v=f4fccf2e73'), import('./js/scene.js?v=f4fccf2e73'), import('./js/sound.js?v=f4fccf2e73')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, plus the optional near layers 10 to 13, and their shadows
@@ -120,7 +120,7 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = mind ? import('./js/ar.js?v=45b59df55d').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = mind ? import('./js/ar.js?v=f4fccf2e73').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
 
   // ---------- the loop ----------
@@ -130,6 +130,7 @@ async function main() {
     last = now;
     if (state.playing && !document.hidden) state.t += dt;
     scene.introFade = state.mode === 'ar';
+    if (state.ar) state.ar.frame(dt);
     scene.update(state.began ? state.t : 0, state.playing ? dt : 0, now / 1000);
     sound.update(state.playing ? scene.crackle : 0, dt);
     stage.render(state.began ? state.t : 0, now / 1000);
@@ -166,15 +167,15 @@ async function main() {
   }
 
   $('#start').onclick = async () => {
+    // iPhones allow the motion sensor only from inside the tap itself, so this comes first
+    const motionP = requestMotion();
     show($('#start'), false);
     document.body.classList.add('started');
     sound.start();
     show($('#sound'));
     const p = state.probe || (await Promise.race([probeP, new Promise((r) => setTimeout(() => r({ ok: false, note: 'probe slow' }), 6000))]));
-    if (!p.ok || params.has('nocam')) {
-      await requestMotion();
-      return playFree();
-    }
+    await motionP;
+    if (!p.ok || params.has('nocam')) return playFree();
     // camera
     state.mode = 'scanning';
     document.body.classList.add('ar');
@@ -182,11 +183,17 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=45b59df55d');
+      const { CameraAR } = await import('./js/ar.js?v=f4fccf2e73');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,
         mind,
+        rawPose: DEBUG && params.has('rawpose'),
+        onError: (e) => {
+          log('tracking failed', e);
+          state.mode = 'scanning';
+          offer();
+        },
         onFound: () => {
           show($('#hint'), false);
           show($('#nocam'), false);

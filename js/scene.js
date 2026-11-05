@@ -5,8 +5,8 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=45b59df55d';
-import { makeLine } from './text.js?v=45b59df55d';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=f4fccf2e73';
+import { makeLine } from './text.js?v=f4fccf2e73';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -35,13 +35,13 @@ const DRAW_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 9];
 const LIT = new Set([7, 11]);
 const MAX_DIYAS = 24;
 
-const LIT_VS = /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+const LIT_VS = /* glsl */ `varying vec2 vUv; varying vec2 vP; void main() { vUv = uv; vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const LIT_FS = /* glsl */ `
   uniform sampler2D map; uniform vec4 uDiya[${MAX_DIYAS}]; uniform int uCount; uniform float uOpacity;
-  varying vec2 vUv;
+  varying vec2 vUv; varying vec2 vP;
   void main() {
     vec4 c = texture2D(map, vUv);
-    vec2 p = vec2(vUv.x - 0.5, (vUv.y - 0.5) * ${CARD_H.toFixed(2)});
+    vec2 p = vP; // card units
     float m = 0.0;
     for (int i = 0; i < ${MAX_DIYAS}; i++) {
       if (i >= uCount) break;
@@ -61,12 +61,14 @@ export class CardScene {
     this.root = new THREE.Group();
     this.root.name = 'card';
     this.content = new THREE.Group(); // everything that lifts and lights
+    this.content.matrixAutoUpdate = false; // setShear()
     this.root.add(this.content);
     this.pointScale = 800;
     this.crackle = 0;
     this.lastT = -1;
     this.depth = 1.8; // how far the layers lift, as a multiple of LAYER_Z
     this.introFade = false;
+    this.boxes = sceneInfo?.boxes || {};
     this._buildLayers(poster, layers, shadows);
     this._buildDiyas(sceneInfo?.diyas || []);
     this._buildName();
@@ -74,6 +76,22 @@ export class CardScene {
     this._buildWords(hand);
     this._buildLogo(logo);
     this.reset();
+  }
+
+  // Slides everything by its height above the card: the depth cue in camera mode.
+  setShear(sx, sy) {
+    this.content.matrix.set(1, 0, sx, 0, 0, 1, sy, 0, 0, 0, 1, 0, 0, 0, 0, 1);
+  }
+
+  // The wish: part of the card (no camera), or steady on screen under parent (camera).
+  attachWords(parent) {
+    if (parent) {
+      parent.add(this.words);
+      this.words.position.set(0, 0, 0);
+    } else {
+      this.content.add(this.words);
+      this.words.position.set(this.textX, this.textY, this.textZ);
+    }
   }
 
   // ---------- build ----------
@@ -89,6 +107,14 @@ export class CardScene {
     this.layers = [];
     this.layerImgs = layers || {};
     const geo = new THREE.PlaneGeometry(1, CARD_H);
+    // Each image holds only its layer's own area (prepare_art.py), so the phone blends far fewer
+    // pixels and holds far less in memory. The geometry is in card units, placed where the art is.
+    const geoFor = (key) => {
+      const b = this.boxes[key];
+      if (!b) return geo;
+      const w = b[2] - b[0], h = (b[3] - b[1]) * CARD_H;
+      return new THREE.PlaneGeometry(w, h).translate(b[0] + w / 2 - 0.5, (0.5 - (b[1] + b[3]) / 2) * CARD_H, 0);
+    };
     const have = layers ? DRAW_ORDER.filter((n) => layers[n]) : [];
     if (have.length >= 9) {
       this.layered = true;
@@ -106,13 +132,13 @@ export class CardScene {
         } else {
           mat = new THREE.MeshBasicMaterial({ map: tex, transparent: n !== 1, depthWrite: false, toneMapped: false });
         }
-        const m = new THREE.Mesh(geo, mat);
+        const m = new THREE.Mesh(geoFor(`layer-${n}`), mat);
         m.renderOrder = 10 + order * 2 + 1;
         this.content.add(m);
         const L = { n, mesh: m, z: LAYER_Z[n], order, lit: LIT.has(n) };
         // a soft shadow of the layer, on whatever is behind it: the paper-cut depth
         if (n >= 2 && shadows && shadows[n] && !LIT.has(n)) {
-          const sm = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: this._tex(shadows[n]), transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
+          const sm = new THREE.Mesh(geoFor(`shadow-${n}`), new THREE.MeshBasicMaterial({ map: this._tex(shadows[n]), transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
           sm.renderOrder = 10 + order * 2;
           this.content.add(sm);
           L.shadow = sm;
@@ -310,20 +336,21 @@ export class CardScene {
     // the open sky between the name and the skyline, clear of the house roof on the right
     this.textX = -0.05;
     this.textY = 0.225;
-    this.veil.position.set(this.textX, this.textY - 0.04, this.textZ - 0.012);
+    this.words = new THREE.Group();
+    this.veil.position.set(0, -0.04, -0.012);
     this.veil.renderOrder = 75;
-    this.content.add(this.veil);
+    this.words.add(this.veil);
     this.lineObjs = this.card.lines.map((text) => {
       const L = makeLine(text, { size: 0.072, maxWidth: 0.78 });
-      L.group.position.set(this.textX, this.textY, this.textZ);
-      this.content.add(L.group);
+      this.words.add(L.group);
       return L;
     });
 
     // "from Vishal", under the wish
     this.fromMesh = this._handOrLabel(hand?.from, this.card.from || 'from Vishal', st.fromAt.h);
-    this.fromMesh.position.set(st.fromAt.x, st.fromAt.y, this.textZ);
-    this.content.add(this.fromMesh);
+    this.fromMesh.position.set(st.fromAt.x - this.textX, st.fromAt.y - this.textY, 0);
+    this.words.add(this.fromMesh);
+    this.attachWords(null);
   }
 
   // The MorningLabs AI mark, cut out of its near-black ground (tools/prepare_logo.py: every pixel
@@ -360,7 +387,7 @@ export class CardScene {
       g.add(glow);
       return { mesh, glow, k };
     });
-    this.root.add(g);
+    this.content.add(g);
     this.logoGroup = g;
     // the mark rides on the front-most layer that covers the band under it, so the lifted
     // layers never slide over it (which layer holds the band depends on Codex's cut)
@@ -376,9 +403,12 @@ export class CardScene {
     for (const L of this.layers) {
       const img = this.layerImgs[L.n];
       if (!img || L.lit) continue;
+      const b = this.boxes[`layer-${L.n}`] || [0, 0, 1, 1];
       for (const [x, y] of points) {
+        const u = x + 0.5, v = 0.5 - y / CARD_H;
+        if (u < b[0] || u > b[2] || v < b[1] || v > b[3]) continue;
         g.clearRect(0, 0, 1, 1);
-        g.drawImage(img, (x + 0.5) * img.width, (0.5 - y / CARD_H) * img.height, 1, 1, 0, 0, 1, 1);
+        g.drawImage(img, ((u - b[0]) / (b[2] - b[0])) * img.width, ((v - b[1]) / (b[3] - b[1])) * img.height, 1, 1, 0, 0, 1, 1);
         if (g.getImageData(0, 0, 1, 1).data[3] > 160 && LAYER_Z[L.n] >= LAYER_Z[front]) front = L.n;
       }
     }
@@ -604,6 +634,7 @@ export class CardScene {
     mesh.material.uniforms.uP.value = p;
     const writing = visible && p > 0 && p < 1;
     if (writing) {
+      if (this.nib.parent !== mesh.parent) mesh.parent.add(this.nib);
       const w = mesh.userData.w;
       const x0 = mesh.position.x - w / 2;
       this.nib.position.set(x0 + w * Math.min(1, p * 1.05), mesh.position.y + Math.sin(p * 40) * 0.008, mesh.position.z + 0.002);
