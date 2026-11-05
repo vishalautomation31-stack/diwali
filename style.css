@@ -195,6 +195,7 @@ body.started .loader { display: none; }
 }
 .s-wish { display: flex; flex-direction: column; gap: 0.55em; font-size: clamp(19px, 5.2vw, 26px); line-height: 1.35; }
 .s-from { color: var(--marigold); font-size: clamp(17px, 4.4vw, 22px); }
+.s-img { display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; }
 
 @media (prefers-reduced-motion: reduce) {
   .btn-main, .loader { animation: none; }

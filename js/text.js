@@ -4,7 +4,7 @@ import * as THREE from '../lib/three.module.min.js';
 
 const PX = 112; // canvas pixels per em: crisp at phone sizes
 
-export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc', leading = 1.28, font = 'Eczar' } = {}) {
+export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc', leading = 1.28, font = 'Eczar', phrases = false } = {}) {
   const pxPerUnit = PX / size;
   const maxPx = maxWidth * pxPerUnit;
   const c = document.createElement('canvas');
@@ -17,7 +17,28 @@ export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc'
   const widths = words.map((w) => g.measureText(w).width);
   const total = widths.reduce((a, b) => a + b, 0) + space * (words.length - 1);
   let rows = [words.map((_, i) => i)];
-  if (total > maxPx) {
+  if (phrases && total > maxPx) {
+    // as many rows as it needs, breaking after a comma or a full stop where it can
+    const rowW = (i, j) => widths.slice(i, j).reduce((a, b) => a + b, 0) + space * (j - i - 1);
+    const memo = new Map();
+    const plan = (i) => {
+      if (i === words.length) return { cost: 0, next: i };
+      if (memo.has(i)) return memo.get(i);
+      let best = null;
+      for (let j = i + 1; j <= words.length; j++) {
+        const w = rowW(i, j);
+        if (w > maxPx && j > i + 1) break;
+        const slack = (maxPx - w) / maxPx;
+        const atEnd = j === words.length;
+        const cost = 1 + (atEnd ? 0 : slack * slack) - (!atEnd && /[,.]$/.test(words[j - 1]) ? 0.6 : 0) + plan(j).cost;
+        if (!best || cost < best.cost) best = { cost, next: j };
+      }
+      memo.set(i, best);
+      return best;
+    };
+    rows = [];
+    for (let i = 0; i < words.length; i = plan(i).next) rows.push(words.slice(i, plan(i).next).map((_, k) => i + k));
+  } else if (total > maxPx) {
     let best = null;
     for (let k = 1; k < words.length; k++) {
       const w1 = widths.slice(0, k).reduce((a, b) => a + b, 0) + space * (k - 1);
@@ -74,9 +95,27 @@ export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc'
     m.position.set(cx, cy, 0);
     m.renderOrder = 80;
     group.add(m);
-    parts.push({ mesh: m, x: cx, y: cy, order: r.i });
+    parts.push({ mesh: m, x: cx, y: cy, order: r.i, word: words[r.i] });
   }
   return { group, parts, height: c.height / pxPerUnit, width: c.width / pxPerUnit, rows: rows.length, texture: tex };
+}
+
+// A line already typeset as an image, for scripts whose joined letters must be shaped ahead of time.
+// One quad; width in card units. Same shape as makeLine's result, so it plays the same way.
+export function makeImageLine(img, width) {
+  const tex = new THREE.Texture(img);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true; // mipmaps: it is drawn much smaller than it is set
+  const height = (width * img.height) / img.width;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0, toneMapped: false })
+  );
+  mesh.renderOrder = 80;
+  const group = new THREE.Group();
+  group.add(mesh);
+  return { group, parts: [{ mesh, x: 0, y: 0, order: 0 }], height, width, rows: 1, texture: tex };
 }
 
 // A single word or phrase as one quad (the text stand-in for the handwriting).

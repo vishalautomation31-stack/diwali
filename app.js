@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=6274618468';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=b50d742617';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -24,7 +24,7 @@ function fail() {
   b.onclick = () => location.reload();
 }
 
-function staticCard(card) {
+function staticCard(card, lineImages) {
   // the card as text: used only when WebGL is unavailable
   show($('#loader'), false);
   $('#s-name').textContent = card.name;
@@ -34,6 +34,11 @@ function staticCard(card) {
     p.textContent = line;
     w.appendChild(p);
   }
+  (lineImages || []).forEach((img, k) => {
+    img.className = 's-img';
+    img.alt = card.imageLines[k].text;
+    w.appendChild(img);
+  });
   $('#s-from').textContent = card.from || '';
   show($('#static'));
 }
@@ -62,7 +67,7 @@ async function main() {
   if (!card) { show($('#loader'), false); return; }
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=6274618468'), import('./js/scene.js?v=6274618468'), import('./js/sound.js?v=6274618468')]);
+  const modsP = Promise.all([import('./js/stage.js?v=b50d742617'), import('./js/scene.js?v=b50d742617'), import('./js/sound.js?v=b50d742617')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, plus the optional near layers 10 to 13, and their shadows
@@ -72,9 +77,9 @@ async function main() {
     const imgs = await Promise.all(nums.map((n) => (names.includes(`${prefix}-${n}.webp`) ? loadImage(card, `${prefix}-${n}.webp`) : null)));
     return Object.fromEntries(nums.map((n, i) => [n, imgs[i]]).filter(([, im]) => im));
   };
-  let poster, sceneInfo, logo, layers = null, shadows = null, handFor = null, handFrom = null, mind = null;
+  let poster, sceneInfo, logo, layers = null, shadows = null, handFor = null, handFrom = null, mind = null, lineImages = null;
   try {
-    [poster, sceneInfo, logo, layers, shadows, handFor, handFrom, mind] = await Promise.all([
+    [poster, sceneInfo, logo, layers, shadows, handFor, handFrom, mind, lineImages] = await Promise.all([
       hasLayers ? null : loadImage(card, 'poster.webp'), // the layers replace the flat poster
       loadJSON(card, 'scene.json'),
       // the MorningLabs AI mark, cut out and in pieces (tools/prepare_logo.py)
@@ -90,6 +95,7 @@ async function main() {
       loadImage(card, 'hand-for.png'),
       loadImage(card, 'hand-from.png'),
       loadAsset(card, 'target.mind').then((b) => (b ? b.arrayBuffer() : null)),
+      card.imageLines ? Promise.all(card.imageLines.map((l) => loadImage(card, l.asset))) : null,
     ]);
   } catch (e) {
     log('assets failed', e);
@@ -97,10 +103,10 @@ async function main() {
   }
   await fontsP;
 
-  let Stage, CardScene, TIMES, Crackle;
+  let Stage, CardScene, Crackle;
   try {
     const [m1, m2, m3] = await modsP;
-    ({ Stage } = m1); ({ CardScene, TIMES } = m2); ({ Crackle } = m3);
+    ({ Stage } = m1); ({ CardScene } = m2); ({ Crackle } = m3);
   } catch (e) {
     log('modules failed', e);
     return fail();
@@ -109,10 +115,10 @@ async function main() {
   let stage, scene;
   try {
     stage = new Stage($('#gl'));
-    scene = new CardScene({ card, poster, layers, shadows, sceneInfo, logo, hand: { for: handFor, from: handFrom } });
+    scene = new CardScene({ card, poster, layers, shadows, sceneInfo, logo, hand: { for: handFor, from: handFrom }, lineImages });
   } catch (e) {
     log('webgl failed', e);
-    return staticCard(card);
+    return staticCard(card, lineImages);
   }
   stage.setCard(scene);
   stage.useFree();
@@ -120,7 +126,7 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = mind ? import('./js/ar.js?v=6274618468').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = mind ? import('./js/ar.js?v=b50d742617').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
 
   // ---------- the loop ----------
@@ -134,7 +140,7 @@ async function main() {
     scene.update(state.began ? state.t : 0, state.playing ? dt : 0, now / 1000);
     sound.update(state.playing ? scene.crackle : 0, dt);
     stage.render(state.began ? state.t : 0, now / 1000);
-    if (state.began && state.t > TIMES.end && !state.replayShown) {
+    if (state.began && state.t > scene.T.end && !state.replayShown) {
       state.replayShown = true;
       show($('#replay'));
     }
@@ -183,7 +189,7 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=6274618468');
+      const { CameraAR } = await import('./js/ar.js?v=b50d742617');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,

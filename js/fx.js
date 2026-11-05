@@ -377,6 +377,106 @@ export class Sparks {
   }
 }
 
+// ---------- small stars that come up one after another ----------
+// stars: [{ x, y, size, delay, phase }]. uAge is seconds since the first may appear.
+export class StarField {
+  constructor(stars) {
+    const n = stars.length;
+    const pos = new Float32Array(n * 3), size = new Float32Array(n), delay = new Float32Array(n), phase = new Float32Array(n);
+    stars.forEach((s, i) => {
+      pos[i * 3] = s.x;
+      pos[i * 3 + 1] = s.y;
+      size[i] = s.size;
+      delay[i] = s.delay;
+      phase[i] = s.phase;
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('psize', new THREE.BufferAttribute(size, 1));
+    g.setAttribute('delay', new THREE.BufferAttribute(delay, 1));
+    g.setAttribute('phase', new THREE.BufferAttribute(phase, 1));
+    this.mat = new THREE.ShaderMaterial({
+      uniforms: { uScale: { value: 800 }, uAge: { value: -1 }, uTime: { value: 0 }, uLevel: { value: 1 } },
+      vertexShader: /* glsl */ `
+        attribute float psize; attribute float delay; attribute float phase;
+        uniform float uScale; uniform float uAge; uniform float uTime; uniform float uLevel;
+        varying float vA; varying float vBig;
+        void main() {
+          vec4 mv = modelViewMatrix * vec4(position, 1.0);
+          gl_Position = projectionMatrix * mv;
+          float age = uAge - delay;
+          float on = clamp(age / 0.6, 0.0, 1.0);
+          on = on * on * (3.0 - 2.0 * on);
+          float flash = age > 0.0 ? exp(-age * 2.4) * 0.8 : 0.0; // each one catches as it arrives
+          vA = (on * (0.72 + 0.28 * sin(uTime * (1.1 + phase * 0.14) + phase)) * uLevel) + flash;
+          vBig = smoothstep(0.016, 0.022, psize);
+          gl_PointSize = max(1.0, psize * uScale / -mv.z * (1.0 + flash * 0.6));
+        }`,
+      fragmentShader: /* glsl */ `
+        varying float vA; varying float vBig;
+        void main() {
+          vec2 d = gl_PointCoord - 0.5;
+          float r = length(d) * 2.0;
+          float core = exp(-r * r * 9.0);
+          float rays = (exp(-abs(d.x) * 46.0) * exp(-abs(d.y) * 7.0) + exp(-abs(d.y) * 46.0) * exp(-abs(d.x) * 7.0)) * vBig;
+          float a = clamp(core + rays, 0.0, 1.0) * vA * smoothstep(1.0, 0.7, r);
+          if (a < 0.003) discard;
+          gl_FragColor = vec4(vec3(1.0, 0.95, 0.82) * a, a);
+          #include <colorspace_fragment>
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.points = new THREE.Points(g, this.mat);
+    this.points.frustumCulled = false;
+  }
+}
+
+// ---------- a soft drift of smoke, kept inside a box in card units ----------
+export function smokeDrift(x0, y0, x1, y1) {
+  const W = 256, H = 128;
+  const c = document.createElement('canvas');
+  c.width = W;
+  c.height = H;
+  const g = c.getContext('2d');
+  let seed = 23;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 90; i++) {
+    const x = rnd() * W, y = H * (0.15 + 0.7 * rnd()), r = 10 + rnd() * 30, a = 0.06 + rnd() * 0.12;
+    for (const dx of [-W, 0, W]) { // drawn three times so the strip tiles as it scrolls
+      const gr = g.createRadialGradient(x + dx, y, 0, x + dx, y, r);
+      gr.addColorStop(0, `rgba(255,255,255,${a})`);
+      gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr;
+      g.fillRect(x + dx - r, y - r, r * 2, r * 2);
+    }
+  }
+  const map = new THREE.CanvasTexture(c);
+  map.wrapS = THREE.RepeatWrapping;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { map: { value: map }, uScroll: { value: 0 }, uOpacity: { value: 0 } },
+    vertexShader: /* glsl */ `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D map; uniform float uScroll; uniform float uOpacity; varying vec2 vUv;
+      void main() {
+        float a = texture2D(map, vec2(vUv.x * 0.9 + uScroll, vUv.y)).a;
+        float b = texture2D(map, vec2(vUv.x * 1.6 - uScroll * 0.6 + 0.37, vUv.y * 0.8 + 0.1)).a;
+        float d = clamp(a * 1.5 + b * 0.8 - 0.1, 0.0, 1.0);
+        float edge = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x) * smoothstep(0.0, 0.22, vUv.y) * smoothstep(1.0, 0.8, vUv.y);
+        float alpha = d * edge * uOpacity;
+        if (alpha < 0.003) discard;
+        gl_FragColor = vec4(mix(vec3(0.06, 0.05, 0.16), vec3(0.42, 0.38, 0.55), d), alpha);
+        #include <colorspace_fragment>
+      }`,
+    transparent: true,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(x1 - x0, y1 - y0), mat);
+  mesh.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0.012);
+  return mesh;
+}
+
 // ---------- additive sprites in the card plane ----------
 export function glowQuad(tex, size, color, renderOrder = 40) {
   const m = new THREE.MeshBasicMaterial({
