@@ -5,8 +5,8 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=0ebcf90f1c';
-import { makeLine } from './text.js?v=0ebcf90f1c';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, glowQuad, radialTexture, starTexture } from './fx.js?v=45b59df55d';
+import { makeLine } from './text.js?v=45b59df55d';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -28,8 +28,10 @@ export const TIMES = {
 // 1 sky, 2 far bursts, 3 skyline, 4 terrace and house, 5 family, 6 diyas unlit, 7 diyas lit,
 // 8 strings of lights and lantern, 9 rangoli (brief section 4); optional near layers
 // 10 big diya unlit, 11 big diya lit, 12 plants, 13 house, stairs and lantern (ar/README.md).
-const LAYER_Z = { 1: 0, 2: 0.016, 3: 0.04, 4: 0.075, 5: 0.12, 6: 0.085, 7: 0.086, 8: 0.092, 9: 0.08, 10: 0.15, 11: 0.151, 12: 0.165, 13: 0.14 };
-const DRAW_ORDER = [1, 2, 3, 4, 9, 6, 7, 8, 5, 13, 12, 10, 11];
+// DRAW_ORDER is Codex's stack (its manifest): drawn in this order at zero lift, the layers rebuild
+// the flat poster exactly. Rangoli (9) sits on the landing painted into the complete house (13).
+const LAYER_Z = { 1: 0, 2: 0.016, 3: 0.04, 4: 0.075, 5: 0.1, 6: 0.102, 7: 0.103, 8: 0.105, 9: 0.112, 10: 0.095, 11: 0.096, 12: 0.12, 13: 0.11 };
+const DRAW_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 9];
 const LIT = new Set([7, 11]);
 const MAX_DIYAS = 24;
 
@@ -99,6 +101,7 @@ export class CardScene {
             uniforms: { map: { value: tex }, uDiya: { value: Array.from({ length: MAX_DIYAS }, () => new THREE.Vector4()) }, uCount: { value: 0 }, uOpacity: { value: 1 } },
             vertexShader: LIT_VS, fragmentShader: LIT_FS, transparent: true, depthWrite: false,
           });
+          mat.userData.layer = n;
           (this.litMats ||= []).push(mat);
         } else {
           mat = new THREE.MeshBasicMaterial({ map: tex, transparent: n !== 1, depthWrite: false, toneMapped: false });
@@ -131,7 +134,7 @@ export class CardScene {
   _lift(n, t) {
     const L = this.layers.find((l) => l.n === n);
     const order = L ? L.order : 0;
-    return easeBack((t - 0.12 - order * 0.075) / 0.85);
+    return easeBack((t - 0.12 - order * 0.05) / 0.85);
   }
 
   _layerZ(n, t) {
@@ -198,7 +201,7 @@ export class CardScene {
       return { ...k, q, acc: 0 };
     });
     this.fireClock = 1.6;
-    this.fireSpots = [[-0.4, 0.13], [0.36, 0.11], [-0.27, 0.05], [0.42, 0.2], [-0.12, 0.17], [0.18, 0.06]];
+    this.fireSpots = [[-0.42, 0.14], [-0.3, 0.075], [-0.12, 0.09], [0.04, 0.08], [0.2, 0.1]]; // low sky, under the words
     this.fireColors = ['#f6ad2b', '#fff3dc', '#e9467a', '#f2862b', '#ffd27a'].map((c) => new THREE.Color(c));
   }
 
@@ -288,27 +291,31 @@ export class CardScene {
 
   _buildWords(hand) {
     const st = this.card.style;
-    this.textZ = 0.34; // in front of the nearest layer (0.165 x depth)
-    // "for", above the name
-    this.forMesh = this._handOrLabel(hand?.for, 'for', st.forAt.h);
-    this.forMesh.position.set(st.forAt.x + this.forMesh.userData.w / 2, st.forAt.y, 0.012);
-    this.content.add(this.forMesh);
+    this.textZ = 0.26; // in front of the nearest layer (0.12 x depth)
+    // "for", above the name: only in Vishal's hand, never a typed stand-in (the print leaves it out too)
+    if (hand?.for) {
+      this.forMesh = this._handOrLabel(hand.for, 'for', st.forAt.h);
+      this.forMesh.position.set(st.forAt.x + this.forMesh.userData.w / 2, st.forAt.y, 0.012);
+      this.content.add(this.forMesh);
+    }
     this.nib = glowQuad(starTexture(64), 0.03, '#ffffff', 86);
     this.content.add(this.nib);
 
     // the wish
     this.veil = new THREE.Mesh(
-      new THREE.PlaneGeometry(1.08, 0.56),
+      new THREE.PlaneGeometry(1.0, 0.5),
       new THREE.MeshBasicMaterial({ map: radialTexture([[0, 'rgba(9,6,28,0.92)'], [0.55, 'rgba(9,6,28,0.6)'], [1, 'rgba(9,6,28,0)']], 256), transparent: true, depthWrite: false, opacity: 0 })
     );
     this.veil.scale.set(1, 1, 1);
-    this.textY = 0.1;
-    this.veil.position.set(0, this.textY - 0.06, this.textZ - 0.012);
+    // the open sky between the name and the skyline, clear of the house roof on the right
+    this.textX = -0.05;
+    this.textY = 0.225;
+    this.veil.position.set(this.textX, this.textY - 0.04, this.textZ - 0.012);
     this.veil.renderOrder = 75;
     this.content.add(this.veil);
     this.lineObjs = this.card.lines.map((text) => {
-      const L = makeLine(text, { size: 0.072, maxWidth: 0.86 });
-      L.group.position.set(0, this.textY, this.textZ);
+      const L = makeLine(text, { size: 0.072, maxWidth: 0.78 });
+      L.group.position.set(this.textX, this.textY, this.textZ);
       this.content.add(L.group);
       return L;
     });
@@ -472,13 +479,13 @@ export class CardScene {
 
     // 3. "for" writes itself
     const fp = clamp01((t - TIMES.forWrite[0]) / (TIMES.forWrite[1] - TIMES.forWrite[0]));
-    this._write(this.forMesh, fp, t > TIMES.forWrite[0] - 0.01);
+    if (this.forMesh) this._write(this.forMesh, fp, t > TIMES.forWrite[0] - 0.01);
 
     // 4. diyas
     this._diyas(t, time);
 
     // 5. the wish, one line at a time
-    this.veil.material.opacity = 0.62 * smooth(L[0] - 0.3, L[0] + 0.5, t);
+    this.veil.material.opacity = 0.42 * smooth(L[0] - 0.3, L[0] + 0.5, t);
     this.lineObjs.forEach((obj, k) => this._line(obj, t, L[k], k + 1 < L.length ? L[k + 1] : Infinity));
 
     // 6. "from Vishal", then the mark
@@ -578,10 +585,17 @@ export class CardScene {
       d.core.material.opacity = level * (0.55 + 0.35 * flick);
       d.core.position.x = d.x + Math.sin(time * 3.1 + d.seed) * d.r * 0.08;
     });
+    const bigD = this.diyas.find((d) => d.big);
     for (const mat of this.litMats || []) {
       const u = mat.uniforms;
-      u.uCount.value = n;
-      this.diyas.forEach((d, i) => u.uDiya.value[i].set(d.x, d.y, d.r * (d.big ? 1.3 : 1), d.level));
+      if (mat.userData.layer === 11 && bigD) {
+        u.uCount.value = 1;
+        u.uDiya.value[0].set(bigD.x, bigD.y, 1, bigD.level); // the whole layer
+      } else {
+        // the parapet diyas stand close together: a tight mask lets them light one at a time
+        u.uCount.value = n;
+        this.diyas.forEach((d, i) => u.uDiya.value[i].set(d.x, d.y, d.big ? d.r * 1.3 : d.r * 0.5, d.level));
+      }
     }
   }
 
