@@ -70,8 +70,8 @@ async function main() {
   const modsP = Promise.all([import('./js/stage.js?v=b50d742617'), import('./js/scene.js?v=b50d742617'), import('./js/sound.js?v=b50d742617')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
-  // Codex's layers 1 to 9, plus the optional near layers 10 to 13, and their shadows
-  const nums = Array.from({ length: 13 }, (_, i) => i + 1);
+  // Codex's layers 1 to 9, the optional near layers 10 to 13, a card's own parts 14 to 16, and their shadows
+  const nums = Array.from({ length: 16 }, (_, i) => i + 1);
   const hasLayers = nums.slice(0, 9).every((n) => names.includes(`layer-${n}.webp`));
   const byNumber = async (prefix) => {
     const imgs = await Promise.all(nums.map((n) => (names.includes(`${prefix}-${n}.webp`) ? loadImage(card, `${prefix}-${n}.webp`) : null)));

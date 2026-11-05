@@ -72,6 +72,11 @@ export class CardScene {
     this.depth = 1.8; // how far the layers lift, as a multiple of LAYER_Z
     this.introFade = false;
     this.boxes = sceneInfo?.boxes || {};
+    // a card with its own art can reorder the stack and move its layers in depth
+    this.order = sceneInfo?.order || DRAW_ORDER;
+    this.Z = { ...LAYER_Z, ...(sceneInfo?.z || {}) };
+    this.swingInfo = sceneInfo?.swing || null;
+    this.risingStars = sceneInfo?.risingStars || 0;
     this._buildLayers(poster, layers, shadows);
     this._buildDiyas(sceneInfo?.diyas || []);
     this._buildName();
@@ -114,7 +119,7 @@ export class CardScene {
       const w = b[2] - b[0], h = (b[3] - b[1]) * CARD_H;
       return new THREE.PlaneGeometry(w, h).translate(b[0] + w / 2 - 0.5, (0.5 - (b[1] + b[3]) / 2) * CARD_H, 0);
     };
-    const have = layers ? DRAW_ORDER.filter((n) => layers[n]) : [];
+    const have = layers ? this.order.filter((n) => layers[n]) : [];
     if (have.length >= 9) {
       this.layered = true;
       this.has = new Set(have);
@@ -131,15 +136,25 @@ export class CardScene {
         } else {
           mat = new THREE.MeshBasicMaterial({ map: tex, transparent: n !== 1, depthWrite: false, toneMapped: false });
         }
-        const m = new THREE.Mesh(geoFor(`layer-${n}`), mat);
+        // the part that swings hangs from a group at its pivot
+        const swinging = this.swingInfo?.layer === n;
+        const [px, py] = swinging ? this.swingInfo.pivot : [0, 0];
+        if (swinging) {
+          this.swing = new THREE.Group();
+          this.swing.position.set(px, py, 0);
+          this.content.add(this.swing);
+        }
+        const parent = swinging ? this.swing : this.content;
+        const m = new THREE.Mesh(swinging ? geoFor(`layer-${n}`).translate(-px, -py, 0) : geoFor(`layer-${n}`), mat);
         m.renderOrder = 10 + order * 2 + 1;
-        this.content.add(m);
-        const L = { n, mesh: m, z: LAYER_Z[n], order, lit: LIT.has(n) };
+        parent.add(m);
+        const L = { n, mesh: m, z: this.Z[n], order, lit: LIT.has(n), swinging };
         // a soft shadow of the layer, on whatever is behind it: the paper-cut depth
         if (n >= 2 && shadows && shadows[n] && !LIT.has(n)) {
-          const sm = new THREE.Mesh(geoFor(`shadow-${n}`), new THREE.MeshBasicMaterial({ map: this._tex(shadows[n]), transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
+          const sg = geoFor(`shadow-${n}`);
+          const sm = new THREE.Mesh(swinging ? sg.translate(-px, -py, 0) : sg, new THREE.MeshBasicMaterial({ map: this._tex(shadows[n]), transparent: true, depthWrite: false, opacity: 0, toneMapped: false }));
           sm.renderOrder = 10 + order * 2;
-          this.content.add(sm);
+          parent.add(sm);
           L.shadow = sm;
         }
         this.layers.push(L);
@@ -163,7 +178,7 @@ export class CardScene {
   }
 
   _layerZ(n, t) {
-    return this.layered && LAYER_Z[n] !== undefined ? LAYER_Z[n] * this.depth * this._lift(n, t) : 0;
+    return this.layered && this.Z[n] !== undefined ? this.Z[n] * this.depth * this._lift(n, t) : 0;
   }
 
   _buildDiyas(diyas) {
@@ -505,7 +520,7 @@ export class CardScene {
         if (u < b[0] || u > b[2] || v < b[1] || v > b[3]) continue;
         g.clearRect(0, 0, 1, 1);
         g.drawImage(img, ((u - b[0]) / (b[2] - b[0])) * img.width, ((v - b[1]) / (b[3] - b[1])) * img.height, 1, 1, 0, 0, 1, 1);
-        if (g.getImageData(0, 0, 1, 1).data[3] > 160 && LAYER_Z[L.n] >= LAYER_Z[front]) front = L.n;
+        if (g.getImageData(0, 0, 1, 1).data[3] > 160 && this.Z[L.n] >= this.Z[front]) front = L.n;
       }
     }
     return front;
@@ -554,11 +569,18 @@ export class CardScene {
     for (const l of this.layers) {
       const p = this.layered ? this._lift(l.n, t) : 0;
       const z = l.z * this.depth * p;
-      l.mesh.position.z = z;
+      if (l.swinging) this.swing.position.z = z;
+      else l.mesh.position.z = z;
       if (l.shadow) {
-        l.shadow.position.set(z * 0.1, -z * 0.16, Math.max(0, z - 0.004));
+        l.shadow.position.set(z * 0.1, -z * 0.16, l.swinging ? -0.004 : Math.max(0, z - 0.004));
         l.shadow.material.opacity = 0.75 * clamp01(p);
       }
+    }
+    // the swing starts with line 1 and never stops: mostly towards and away, a hair side to side
+    if (this.swing) {
+      const a = smooth(L[0], L[0] + 2.5, t), w = (2 * Math.PI) / 3.6;
+      this.swing.rotation.x = a * 0.085 * Math.sin(w * t);
+      this.swing.rotation.z = a * 0.012 * Math.sin(w * t + 0.6);
     }
     const night = this._night(t);
     for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.setScalar(night);
@@ -566,6 +588,7 @@ export class CardScene {
     this.plate.material.opacity = enter;
     for (const l of this.layers) {
       if (l.lit) l.mesh.material.uniforms.uOpacity.value = enter;
+      else if (l.n === this.risingStars) l.mesh.material.opacity = enter * smooth(L[0] + 0.1, L[0] + 1.6, t);
       else l.mesh.material.opacity = enter;
     }
     for (const d of this.diyas) {
@@ -629,7 +652,9 @@ export class CardScene {
     const deeper = firstImage < L.length ? smooth(L[firstImage] - 0.4, L[firstImage] + 0.4, t) : 0;
     this.veil.material.opacity = (0.42 + 0.26 * deeper) * smooth(L[0] - 0.3, L[0] + 0.5, t);
     this.veil.position.y = -0.04 - 0.06 * deeper;
-    this.lineObjs.forEach((obj, k) => this._line(obj, t, L[k], k + 1 < L.length ? L[k + 1] : Infinity));
+    if (ch === 'stars') this.veil.material.opacity *= 1 - 0.8 * smooth(T.fromWrite[0], T.fromWrite[0] + 1, t);
+    const afterLast = ch === 'stars' ? T.fromWrite[0] : Infinity;
+    this.lineObjs.forEach((obj, k) => this._line(obj, t, L[k], k + 1 < L.length ? L[k + 1] : afterLast));
 
     // 6. "from Vishal", then the mark
     const wp = clamp01((t - T.fromWrite[0]) / (T.fromWrite[1] - T.fromWrite[0]));
@@ -782,7 +807,7 @@ export class CardScene {
 
   _line(obj, t, start, next) {
     const last = !isFinite(next);
-    const end = last ? Infinity : next - 0.2;
+    const end = last ? Infinity : next - (this.choreo === 'stars' ? 0.7 : 0.2);
     obj.group.visible = t > start - 0.05 && (last || t < end + 0.7);
     if (!obj.group.visible) return;
     const parts = obj.parts;
