@@ -65,6 +65,8 @@ async function main() {
     return fail();
   }
   if (!card) { show($('#loader'), false); return; }
+  // a test link: ?show turns on the fireworks and music for a card that does not have them yet
+  if (params.has('show')) card.show = { sky: true, music: true };
 
   // three.js and the scene modules load in parallel with the art
   const modsP = Promise.all([import('./js/stage.js?v=b50d742617'), import('./js/scene.js?v=b50d742617'), import('./js/sound.js?v=b50d742617')]);
@@ -123,6 +125,7 @@ async function main() {
   stage.setCard(scene);
   stage.useFree();
   const sound = new Crackle();
+  scene.onBurst = (power, x) => sound.boom(power, x);
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
@@ -159,6 +162,7 @@ async function main() {
     state.replayShown = false;
     scene.reset();
     show($('#replay'), false);
+    if (card.show?.music) sound.playMusic();
   }
 
   async function playFree() {
@@ -240,7 +244,7 @@ async function main() {
   };
 
   if (DEBUG) {
-    window.__card = { state, scene, stage, card: { name: card.name, lines: card.lines, assets: names } };
+    window.__card = { state, scene, stage, sound, card: { name: card.name, lines: card.lines, assets: names } };
     // Freeze at time t (seconds), optionally running the particles up to it, and save the canvas
     // to the local dev server (tools/serve.mjs writes it to private/out/). Local checks only.
     window.__snap = async (t, name, warm = 1.2) => {

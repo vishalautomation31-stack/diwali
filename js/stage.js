@@ -201,6 +201,7 @@ export class Stage {
     this.starMat.uniforms.uTime.value = time;
     // sparks are sized in card units; in camera mode a card unit is the tracker's image width
     if (this.card) this.card.pointScale = this.pointScale * (this.mode === 'ar' ? this.arScale : 1);
+    if (this.card?.sky) this.renderer.getDrawingBufferSize(this.card.sky.mat.uniforms.uView.value);
     this.renderer.render(this.scene, this.camera);
   }
 }

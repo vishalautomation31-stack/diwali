@@ -7,6 +7,7 @@
 import * as THREE from '../lib/three.module.min.js';
 import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=b50d742617';
 import { makeLine, makeImageLine } from './text.js?v=b50d742617';
+import { SkyShow, planShow } from './sky.js?v=b50d742617';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -83,6 +84,7 @@ export class CardScene {
     this._buildAmbient(sceneInfo?.sparklers || []);
     this._buildWords(hand, lineImages);
     this._buildLogo(logo);
+    if (card.show?.sky) this._buildSky();
     this.reset();
   }
 
@@ -134,7 +136,7 @@ export class CardScene {
           mat.userData.layer = n;
           (this.litMats ||= []).push(mat);
         } else {
-          mat = new THREE.MeshBasicMaterial({ map: tex, transparent: n !== 1, depthWrite: false, toneMapped: false });
+          mat = new THREE.MeshBasicMaterial({ map: tex, transparent: n !== 1 || !!this.card.show?.sky, depthWrite: false, toneMapped: false });
         }
         // the part that swings hangs from a group at its pivot
         const swinging = this.swingInfo?.layer === n;
@@ -308,6 +310,28 @@ export class CardScene {
   _quiet(t) {
     const L = this.T.lines;
     return smooth(L[2] - 0.2, L[2] + 0.7, t) * (1 - smooth(L[4] - 0.2, L[4] + 1.0, t));
+  }
+
+  // Fireworks round the whole screen, in step with the choreography: a pause where the words need
+  // the quiet, and a volley where the card has something to celebrate.
+  _buildSky() {
+    const T = this.T, L = T.lines;
+    let quiet = [], volleys = [T.draw[1] + 0.2], fountainsFrom = L[L.length - 1];
+    if (this.choreo === 'stars') {
+      quiet = [[L[1] - 0.3, this.clearAt], [L[2] - 0.3, L[4]]];
+      volleys.push(this.clearAt + 0.3, L[4] + 0.3);
+      fountainsFrom = L[4] + 0.2;
+    } else if (this.choreo === 'fade') {
+      quiet = [[L[1] - 0.3, L[2] + 0.3]];
+      volleys.push(L[2] + 0.7, L[3] + 0.3);
+      fountainsFrom = L[3];
+    } else {
+      volleys.push(L[2] + 1.2);
+      fountainsFrom = L[3];
+    }
+    this.sky = new SkyShow(planShow({ draw: T.draw, fromWrite: T.fromWrite, quiet, volleys }), { fountainsFrom, finale: T.fromWrite[0], end: T.end });
+    this.sky.onBurst = (power, x) => this.onBurst?.(power, x);
+    this.root.add(this.sky.group);
   }
 
   // the children's sparklers: how hard they burn at time t (0 out .. 1.6 flaring)
@@ -556,6 +580,7 @@ export class CardScene {
     this.emberClock = 0;
     this.streamDone = false;
     this.relightSparked = false;
+    this.sky?.reset();
   }
 
   // State at time t. dt drives the particles only.
@@ -582,7 +607,8 @@ export class CardScene {
       this.swing.rotation.x = a * 0.085 * Math.sin(w * t);
       this.swing.rotation.z = a * 0.012 * Math.sin(w * t + 0.6);
     }
-    const night = this._night(t);
+    // the sky show lights the card a little as each one bursts
+    const night = this._night(t) + (this.sky ? 0.09 * this.sky.flash : 0);
     for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.setScalar(night);
     const enter = this.introFade ? smooth(0, 0.35, t) : 1; // camera: fade the render in over the print
     this.plate.material.opacity = enter;
@@ -684,6 +710,7 @@ export class CardScene {
       }
     }
     this.sparks.mat.uniforms.uScale.value = this.pointScale;
+    if (this.sky) this.sky.update(t, dt, time, this.pointScale);
     if (dt > 0) this.sparks.update(Math.min(dt, 0.05));
     this.lastT = t;
   }
