@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=b50d742617';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=8d6e5edd83';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -69,7 +69,7 @@ async function main() {
   if (params.has('show')) card.show = { sky: true, music: true };
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=b50d742617'), import('./js/scene.js?v=b50d742617'), import('./js/sound.js?v=b50d742617')]);
+  const modsP = Promise.all([import('./js/stage.js?v=8d6e5edd83'), import('./js/scene.js?v=8d6e5edd83'), import('./js/sound.js?v=8d6e5edd83')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, the optional near layers 10 to 13, a card's own parts 14 to 16, and their shadows
@@ -129,7 +129,7 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = mind ? import('./js/ar.js?v=b50d742617').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = mind ? import('./js/ar.js?v=8d6e5edd83').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
 
   // ---------- the loop ----------
@@ -194,7 +194,7 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=b50d742617');
+      const { CameraAR } = await import('./js/ar.js?v=8d6e5edd83');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,

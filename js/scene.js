@@ -5,9 +5,9 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=b50d742617';
-import { makeLine, makeImageLine } from './text.js?v=b50d742617';
-import { SkyShow, planShow } from './sky.js?v=b50d742617';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=8d6e5edd83';
+import { makeLine, makeImageLine } from './text.js?v=8d6e5edd83';
+import { SkyShow, planShow } from './sky.js?v=8d6e5edd83';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -313,7 +313,7 @@ export class CardScene {
   }
 
   // Fireworks round the whole screen, in step with the choreography: a pause where the words need
-  // the quiet, and a volley where the card has something to celebrate.
+  // the quiet, and a volley where the card celebrates.
   _buildSky() {
     const T = this.T, L = T.lines;
     let quiet = [], volleys = [T.draw[1] + 0.2], fountainsFrom = L[L.length - 1];
