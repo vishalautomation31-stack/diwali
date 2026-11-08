@@ -6,7 +6,7 @@
 // Each spark is a short streak from where it is back along its path, the way a real one reads to
 // the eye: long and thin while it is fast, a point of light when it has slowed and hangs.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=717dd6026e';
+import { glowQuad, radialTexture } from './fx.js?v=65a035480c';
 
 const STAR = 1, EMBER = 2, POP = 3, FOUNTAIN = 4;
 const MAX = 3000;
@@ -23,7 +23,7 @@ const WHITE = c('#ffffff');
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // The running order: when each rocket goes up. Fixed for a card, so Replay is the same show.
-export function planShow({ draw, fromWrite, quiet = [], volleys = [] }) {
+export function planShow({ draw, fromWrite, quiet = [], volleys = [], extras = [], density = 1 }) {
   let seed = 41;
   const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const inQuiet = (t) => quiet.some(([a, b]) => t > a && t < b);
@@ -34,7 +34,7 @@ export function planShow({ draw, fromWrite, quiet = [], volleys = [] }) {
   };
   const STYLES = ['peony', 'chrys', 'ring', 'crackle', 'willow'];
   const zoneAt = () => { const z = rnd(); return z < 0.45 ? 'top' : z < 0.8 ? 'side' : z < 0.95 ? 'low' : 'behind'; };
-  for (let t = draw[0] + 1.0; t < fromWrite[0]; t += 1.3 + rnd() * 1.1) {
+  for (let t = draw[0] + 1.0; t < fromWrite[0]; t += (1.3 + rnd() * 1.1) / density) {
     if (!inQuiet(t)) add(t, STYLES[Math.floor(rnd() * STYLES.length)], zoneAt(), 0.75 + rnd() * 0.2);
   }
   // far off, small and often, so the sky has depth; these stop for the quiet too
@@ -48,6 +48,7 @@ export function planShow({ draw, fromWrite, quiet = [], volleys = [] }) {
     add(v + 0.85, 'crackle', 'top', 0.9);
   }
   for (let i = 0; i < 8; i++) add(fromWrite[0] + i * 0.38, i % 3 === 0 ? 'willow' : i % 3 === 1 ? 'chrys' : 'peony', i % 2 ? 'top' : 'side', 1.05);
+  for (const e of extras) rockets.push({ zone: 'top', power: 1, palette: 0, r: [0.5, 0.5, 0.5, 0.5], ...e });
   return rockets.sort((a, b) => a.t - b.t);
 }
 
@@ -115,6 +116,8 @@ export class SkyShow {
     this.flash = 0;
     this.onBurst = null;
     this.floor = -Infinity;
+    this.spread = 1;
+    this.lean = 0;
 
     this.pos = new Float32Array(MAX * 3);
     this.vel = new Float32Array(MAX * 3);
@@ -159,24 +162,28 @@ export class SkyShow {
       return { q, level: 0 };
     });
     const baseTex = radialTexture([[0, 'rgba(255,235,190,1)'], [0.3, 'rgba(255,180,90,0.45)'], [1, 'rgba(255,140,60,0)']], 64);
-    this.fountains = [[-0.62, -1.02, -0.35], [0.62, -1.02, -0.35]].map(([x, y, z]) => {
+    this.fountains = [[-0.62, -1.02, -0.35], [0.62, -1.02, -0.35], [0, 0, 0], [0, 0, 0]].map(([x, y, z], k) => {
       const q = glowQuad(baseTex, 0.3, '#ffffff', 2);
       q.material.depthTest = false;
       q.position.set(x, y, z);
       this.group.add(q);
-      return { x, y, y0: y, z, q, acc: 0, seed: x * 40 };
+      return { x, y, z, home: [x, y, z], q, acc: 0, seed: x * 40, spare: k > 1 };
     });
     this.reset();
   }
 
   // A card standing on a real surface: rockets go up from it, the fountains stand on it, and no
-  // spark falls through it. null for none.
-  setFloor(y) {
+  // spark falls through it; the show opens out across the room. null for none.
+  setFloor(y, { spread = 1, lean = 0, fountains = null } = {}) {
     this.floor = y ?? -Infinity;
-    for (const f of this.fountains) {
-      f.y = y ?? f.y0;
-      f.q.position.y = f.y;
-    }
+    this.spread = spread;
+    this.lean = lean;
+    this.fountains.forEach((f, k) => {
+      const at = y != null && fountains ? fountains[k] : null;
+      f.spare = !at && k > 1;
+      [f.x, f.y, f.z] = at ? [at[0], y, at[1]] : f.home;
+      f.q.position.set(f.x, f.y, f.z);
+    });
   }
 
   reset() {
@@ -210,9 +217,18 @@ export class SkyShow {
   }
 
   _launch(p) {
-    const [x, at, z] = place(p.zone, p.r);
-    const y = Math.max(at, this.floor + 0.5);
-    const g = 0.55, x0 = x + (p.r[3] - 0.5) * 0.25, y0 = Math.max(-1.5, this.floor);
+    const spot = p.to || place(p.zone, p.r);
+    const x = spot[0] * (p.to ? 1 : this.spread);
+    const y = Math.max(spot[1], this.floor + 0.5);
+    let z = spot[2], y0 = Math.max(-1.5, this.floor), x0 = x + (p.r[3] - 0.5) * 0.25;
+    if (p.from) {
+      // from a point on the card, which may be leaning back
+      const h = p.from[1] + 0.7;
+      x0 = p.from[0];
+      y0 = h * Math.cos(this.lean) - 0.7;
+      z = -h * Math.sin(this.lean);
+    }
+    const g = 0.55;
     const vy = (y - y0) / p.flight + 0.5 * g * p.flight;
     this.rockets.push({ x: x0, y: y0, z, vx: (x - x0) / p.flight, vy, age: 0, g, flight: p.flight, style: p.style, power: p.power, palette: p.palette, clock: 0 });
   }
@@ -299,6 +315,7 @@ export class SkyShow {
     // the fountains below the card: from the given time, and hardest at the end
     const level = smooth(this.fountainsFrom, this.fountainsFrom + 1.5, t) * (0.45 + 0.55 * smooth(this.finale - 0.5, this.finale + 1, t));
     for (const f of this.fountains) {
+      if (f.spare) continue;
       f.q.material.opacity = level * (0.6 + 0.3 * Math.sin(time * 19 + f.seed));
       f.acc += dt * 110 * level * this.quality;
       while (f.acc >= 1) {

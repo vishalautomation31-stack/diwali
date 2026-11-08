@@ -65,6 +65,9 @@ body.ar .night { display: none; }
 body.lit .cam::after { opacity: 1; }
 /* a card standing in a real room: the room stays in view, at evening light */
 body.surface .cam::after { background: radial-gradient(95% 75% at 50% 50%, rgba(8, 6, 26, 0.18), rgba(8, 6, 26, 0.62)); }
+/* the room goes dark too when the card's lights go out */
+body.surface .cam::before { content: ""; position: absolute; inset: 0; z-index: 1; background: rgba(6, 4, 20, 0.74); opacity: 0; transition: opacity 1.2s ease; pointer-events: none; }
+body.surface.blackout .cam::before { opacity: 1; }
 
 /* a test link only (?stats) */
 .stats {

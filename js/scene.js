@@ -5,10 +5,11 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=717dd6026e';
-import { makeLine, makeImageLine } from './text.js?v=717dd6026e';
-import { SkyShow, planShow } from './sky.js?v=717dd6026e';
-import { paintStrand, paintSwag } from './marigold.js?v=717dd6026e';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=65a035480c';
+import { makeLine, makeImageLine } from './text.js?v=65a035480c';
+import { SkyShow, planShow } from './sky.js?v=65a035480c';
+import { paintStrand, paintSwag } from './marigold.js?v=65a035480c';
+import { Sprites, FREE } from './sprites.js?v=65a035480c';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -61,6 +62,7 @@ export class CardScene {
   constructor({ card, poster, layers, shadows, sceneInfo, logo, hand, lineImages }) {
     this.card = card;
     this.choreo = ['stream', 'stars', 'lamp'].includes(card.choreo) ? card.choreo : 'fade';
+    this.motion = card.motion || null; // what a name of its own does: bulbs, or climbing letters
     // a card can carry its own timing (a longer wish); otherwise the sequence in the brief
     this.T = { ...TIMES, ...(card.times || {}), lines: card.times?.lines || TIMES.lines[this.choreo] };
     this.root = new THREE.Group();
@@ -348,6 +350,7 @@ export class CardScene {
   _buildName() {
     const geom = this.card.geom;
     const style = this.card.style;
+    if (this.motion === 'climb') this._climbLetters(geom);
     this.path = buildNamePath(geom);
     this.nameGroup = new THREE.Group();
     this.content.add(this.nameGroup);
@@ -389,6 +392,104 @@ export class CardScene {
     this.fireColors = ['#f6ad2b', '#fff3dc', '#e9467a', '#f2862b', '#ffd27a'].map((c) => new THREE.Color(c));
     if (this.choreo === 'stars') this._buildStars();
     if (this.choreo === 'lamp') this._buildToran();
+    if (this.motion === 'bulbs') this._buildBulbs();
+    if (this.motion === 'climb') this._buildComets();
+  }
+
+  // Each letter a little higher than the one before.
+  _climbLetters(geom) {
+    const RISE = 0.032, n = geom.letters.length;
+    geom.letters.forEach((L, i) => {
+      const up = (i - (n - 1) * 0.62) * RISE;
+      for (const c of L.contours) for (const p of c) p[1] += up;
+    });
+    const ys = geom.letters.flatMap((L) => L.contours.flat().map((p) => p[1]));
+    geom.box[1] = Math.min(...ys);
+    geom.box[3] = Math.max(...ys);
+  }
+
+  // Three comets go up from the top of the last letter on the line about the year.
+  _buildComets() {
+    const last = this.card.geom.letters[this.card.geom.letters.length - 1];
+    const pts = last.contours.flat();
+    const top = Math.max(...pts.map((p) => p[1]));
+    const x = (Math.min(...pts.map((p) => p[0])) + Math.max(...pts.map((p) => p[0]))) / 2;
+    const s = this.T.lines[2] + 0.35;
+    this.comets = [-1, 0, 1].map((k, i) => {
+      const q = glowQuad(starTexture(64), 0.1, '#ffd58a', 63);
+      this.content.add(q);
+      return { q, at: s + i * 0.42, x: x + k * 0.03, y: top, dx: k * 0.05 };
+    });
+  }
+
+  _flyComets(t, dt) {
+    for (const c of this.comets) {
+      const u = (t - c.at) / 0.6;
+      c.q.material.opacity = u > 0 && u < 1 ? 0.95 : 0;
+      if (u <= 0 || u >= 1) continue;
+      const x = c.x + c.dx * u, y = c.y + (1.02 - c.y) * u * u;
+      c.q.position.set(x, y, 0.03);
+      const s = 0.85 + 0.35 * Math.random();
+      c.q.scale.set(s, s, 1);
+      if (dt > 0) this.sparks.emit(x, y, 0.024, Math.round(dt * 240 + Math.random()), { speed: 0.2, ttl: 0.5, size: 0.009 });
+    }
+  }
+
+  // Marquee bulbs along the outline, lit one by one once it is written; the last stays dark until
+  // a spark runs the whole outline to it on the second line.
+  _buildBulbs() {
+    const n = Math.round(this.path.total / 0.07);
+    this.bulbs = [];
+    for (let i = 0; i < n; i++) {
+      const f = (i + 0.5) / n;
+      const [x, y, on] = pathPoint(this.path, f);
+      if (on) this.bulbs.push([x, y, f]);
+    }
+    // the one that stays dark: the top right corner of the last letter, where the eye finishes the name
+    this.darkBulb = this.bulbs.reduce((best, b, i) => (b[0] + b[1] > this.bulbs[best][0] + this.bulbs[best][1] ? i : best), 0);
+    const c = document.createElement('canvas');
+    c.width = c.height = 32;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    g.beginPath();
+    g.arc(16, 16, 14, 0, 6.283);
+    g.fill();
+    const disc = new THREE.CanvasTexture(c);
+    this.bulbCores = new Sprites(disc, this.bulbs.length, { order: 33 });
+    this.bulbGlows = new Sprites(radialTexture([[0, 'rgba(255,226,160,1)'], [0.3, 'rgba(255,176,80,0.4)'], [1, 'rgba(255,140,40,0)']], 64), this.bulbs.length, { additive: true, order: 34 });
+    for (const b of [this.bulbCores, this.bulbGlows]) this.content.add(b.mesh);
+    this.bulbTimes = { from: this.T.draw[1] + 0.1, spark: this.T.lines[1] + 1.0 };
+    this.bulbTimes.each = Math.min(0.03, (this.T.lines[0] + 1.4 - this.bulbTimes.from) / this.bulbs.length);
+    this.bulbTimes.arrive = this.bulbTimes.spark + 1.25;
+  }
+
+  _lightBulbs(t, time, dt) {
+    const { from, each, spark, arrive } = this.bulbTimes, n = this.bulbs.length;
+    const lastLit = from + n * each;
+    this.bulbs.forEach(([x, y], i) => {
+      const final = i === this.darkBulb;
+      const at = from + i * each;
+      let on = smooth(at, at + 0.1, t);
+      if (final) {
+        const trying = t > lastLit && t < arrive && Math.sin(time * 1.4) > 0.55 ? 0.3 * Math.max(0, Math.sin(time * 26)) : 0;
+        on = Math.max(trying, smooth(arrive - 0.03, arrive + 0.1, t));
+      }
+      const seen = smooth(from - 0.3, from, t);
+      const chase = final && t < arrive ? 1 : 0.74 + 0.26 * Math.sin(time * 6 - i * 0.9);
+      const pop = final ? Math.exp(-Math.max(0, t - arrive) * 3) * smooth(arrive - 0.03, arrive + 0.05, t) : 0;
+      const r = 0.28 + 0.72 * on, g = 0.18 + 0.72 * on, b = 0.1 + 0.56 * on;
+      const core = final ? 0.03 : 0.021;
+      this.bulbCores.set(i, x, y, 0.02, core, core, 0, FREE, r, g, b, seen);
+      const size = 0.085 * (1 + pop * 1.8);
+      this.bulbGlows.set(i, x, y, 0.021, size, size, 0, FREE, 1, 1, 1, on * chase);
+    });
+    this.bulbCores.flush();
+    this.bulbGlows.flush();
+    if (dt > 0 && t >= arrive && !this.bulbPopped) {
+      this.bulbPopped = true;
+      const [x, y] = this.bulbs[this.darkBulb];
+      this.sparks.burst(x, y, 0.024, this.fireColors[0], 34);
+    }
   }
 
   // Small stars across the open sky, coming up outwards from the name. Never inside the name's
@@ -475,7 +576,9 @@ export class CardScene {
       volleys.push(L[2] + 1.2);
       fountainsFrom = L[3] ?? L[L.length - 1];
     }
-    this.sky = new SkyShow(planShow({ draw: T.draw, fromWrite: T.fromWrite, quiet, volleys }), { fountainsFrom, finale: T.fromWrite[0], end: T.end });
+    // the comets carry on as rockets from where they leave the card
+    const extras = (this.comets || []).map((c, i) => ({ t: c.at + 0.6, flight: 0.62, style: ['peony', 'chrys', 'willow'][i], palette: i, from: [c.x + c.dx, 1.02], to: [c.x + c.dx * 5, 1.5 + i * 0.16, -0.3] }));
+    this.sky = new SkyShow(planShow({ draw: T.draw, fromWrite: T.fromWrite, quiet, volleys, extras, density: this.card.surface ? 1.5 : 1 }), { fountainsFrom, finale: T.fromWrite[0], end: T.end });
     this.sky.onBurst = (power, x) => this.onBurst?.(power, x);
     this.root.add(this.sky.group);
   }
@@ -594,7 +697,7 @@ export class CardScene {
     this.veil.renderOrder = 75;
     this.words.add(this.veil);
     this.lineObjs = this.card.lines.map((text) => {
-      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' ? { size: 0.072, maxWidth: 0.7, phrases: /,\s/.test(text) } : { size: 0.072, maxWidth: 0.78 });
+      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' || this.motion ? { size: this.card.surface ? 0.08 : 0.072, maxWidth: 0.7, phrases: /,\s/.test(text) } : { size: 0.072, maxWidth: 0.78 });
       this.words.add(L.group);
       return L;
     });
@@ -728,6 +831,7 @@ export class CardScene {
     this.emberClock = 0;
     this.streamDone = false;
     this.relightSparked = false;
+    this.bulbPopped = false;
     this.sky?.reset();
   }
 
@@ -811,10 +915,19 @@ export class CardScene {
       this.head.position.set(x, y, 0.014);
       this.head.material.opacity = 0.8;
       if (dt > 0) this.sparks.emit(x, y, 0.012, Math.round(dt * 160 + Math.random()), { speed: 0.35, ttl: 0.4, size: 0.009 });
+    } else if (this.motion === 'bulbs' && t >= this.bulbTimes.spark && t < this.bulbTimes.arrive) {
+      const p = ((t - this.bulbTimes.spark) / (this.bulbTimes.arrive - this.bulbTimes.spark)) * this.bulbs[this.darkBulb][2];
+      const [x, y, on] = pathPoint(this.path, p);
+      this.head.position.set(x, y, 0.024);
+      this.head.material.opacity = on ? 0.95 : 0.4;
+      this.head.scale.setScalar(1.5);
+      if (on && dt > 0) this.sparks.emit(x, y, 0.022, Math.round(dt * 200 + Math.random()), { speed: 0.4, ttl: 0.45, size: 0.01 });
     } else {
       this.head.material.opacity = 0;
     }
     this.crackle = drawing || flyingIn ? 1 : relight >= 0 && relight <= 1 ? 0.7 : this._streamActive(t) ? 0.25 : 0;
+    if (this.motion === 'bulbs') this._lightBulbs(t, time, dt);
+    if (this.motion === 'climb') this._flyComets(t, dt);
 
     // 3. "for" writes itself
     const fp = clamp01((t - T.forWrite[0]) / (T.forWrite[1] - T.forWrite[0]));

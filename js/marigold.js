@@ -1,6 +1,6 @@
 // Marigold strings, like a toran: a line of flowers above the name, with strings dropping from it
 // into the gaps between the letters. Painted here flower by flower, so there is no image to carry.
-const PX = 1000; // canvas pixels to a card width
+const CRISP = 1000; // canvas pixels to a card width, close up
 
 function flower(g, x, y, r, orange, rnd) {
   const rings = orange
@@ -55,7 +55,7 @@ function sheet(w, h, paint) {
 const generator = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 // One string, hung from the middle of its top edge. Sizes in card units.
-export function paintStrand(count, r, gap, seed) {
+export function paintStrand(count, r, gap, seed, PX = CRISP) {
   const rnd = generator(seed);
   const pad = Math.ceil(r * PX * 0.7);
   const rp = r * PX, gp = gap * PX;
@@ -76,7 +76,7 @@ export function paintStrand(count, r, gap, seed) {
 }
 
 // The line of flowers along a curve y(x) from x0 to x1; returns where its sheet sits in card units.
-export function paintSwag(curve, x0, x1, r, gap, seed) {
+export function paintSwag(curve, x0, x1, r, gap, seed, PX = CRISP) {
   const rnd = generator(seed);
   const pts = [];
   let x = x0;

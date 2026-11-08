@@ -3,13 +3,15 @@
 // Agreement: lib/xr/LICENSE). The engine draws the camera on its own canvas under the page's; this
 // file turns its camera pose into the card's pose, and leaves the rest of the page as it is.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=717dd6026e';
-import { CARD_H } from './scene.js?v=717dd6026e';
+import { glowQuad, radialTexture } from './fx.js?v=65a035480c';
+import { CARD_H } from './scene.js?v=65a035480c';
+import { World } from './world.js?v=65a035480c';
+import { flameTexture } from './sprites.js?v=65a035480c';
 
 const CAMERA_Y = 1.3;    // how high the engine's world puts the camera; the surface is y = 0
-const AIM_Y = -0.42;     // where on the screen the flame sits (-1 bottom, 1 top): the card stands up from there
+const AIM_Y = -0.2;      // where on the screen the flame sits (-1 bottom, 1 top): the card stands up from there
 const MIN_DOWN = 0.32;   // how steeply the aim must point down before it counts as the surface
-const FILL = 0.78;       // how much of the view's width the card takes when it lands
+const FILL = 0.54;       // how much of the view's width the card takes when it lands: the room gets the rest
 export const OPENING = 1.1; // seconds it lies closed and swings open before the sequence's own clock starts
 const SETTLE = 3500;     // ms to wait for the engine to say it is tracking before trusting it anyway
 const HALF_H = CARD_H / 2;
@@ -35,32 +37,6 @@ export function loadEngine() {
     document.head.appendChild(s);
   });
   return engine;
-}
-
-// the small flame that shows where it will land
-function flameTexture() {
-  const c = document.createElement('canvas');
-  c.width = 64;
-  c.height = 128;
-  const g = c.getContext('2d');
-  const fill = g.createRadialGradient(32, 94, 2, 32, 84, 66);
-  fill.addColorStop(0, 'rgba(255,252,232,1)');
-  fill.addColorStop(0.32, 'rgba(255,212,120,1)');
-  fill.addColorStop(0.72, 'rgba(255,136,44,0.95)');
-  fill.addColorStop(1, 'rgba(255,92,24,0.2)');
-  g.fillStyle = fill;
-  g.shadowColor = 'rgba(255,150,60,0.9)';
-  g.shadowBlur = 12;
-  g.beginPath();
-  g.moveTo(32, 8);
-  g.bezierCurveTo(38, 44, 55, 62, 53, 88);
-  g.bezierCurveTo(51, 110, 40, 118, 32, 118);
-  g.bezierCurveTo(24, 118, 13, 110, 11, 88);
-  g.bezierCurveTo(9, 62, 26, 44, 32, 8);
-  g.fill();
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  return t;
 }
 
 export class SurfaceAR {
@@ -174,6 +150,15 @@ export class SurfaceAR {
     this.back = new THREE.Mesh(new THREE.PlaneGeometry(1, CARD_H), new THREE.MeshBasicMaterial({ color: '#1a1445', side: THREE.BackSide, toneMapped: false }));
     this.back.position.z = -0.001;
     this.stage.card.root.add(this.back);
+    // everything in the room is drawn after the card; this keeps what is behind the card behind it
+    this.proxy = new THREE.Mesh(new THREE.PlaneGeometry(1, CARD_H), new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
+    this.proxy.position.z = -0.004;
+    this.proxy.renderOrder = -1;
+    this.stage.card.root.add(this.proxy);
+    this.world = new World(this.stage.card);
+    this.world.group.visible = false;
+    this.stage.scene.add(this.world.group);
+    this.world.warm(this.stage.renderer);
   }
 
   // where the aim meets the surface
@@ -208,7 +193,8 @@ export class SurfaceAR {
     this.lean = clamp(elevation * 0.75, 0.2, 0.85);
     this.stage.arScale = this.width;
     this.shadow.visible = this.cover.visible = true;
-    this.stage.card.sky?.setFloor(-HALF_H);
+    this.world.group.visible = true;
+    this.stage.card.sky?.setFloor(-HALF_H, { spread: 1.75, lean: this.lean, fountains: [[-1.3, 0.55], [1.3, 0.55], [-0.62, 1.55], [0.62, 1.55]] });
     this.onPlaced?.();
   }
 
@@ -286,6 +272,12 @@ export class SurfaceAR {
     _a.compose(_v.set(this.base.x, 0, this.base.z), _q.setFromEuler(_e.set(-Math.PI / 2, this.yaw, 0, 'YXZ')), _s.set(w * 1.5, w * 0.8, 1));
     this.shadow.matrix.multiplyMatrices(this.camInv, _a);
     this.shadow.material.opacity = there;
+    // the room round it
+    _a.compose(_v.set(this.base.x, 0, this.base.z), _q.setFromEuler(_e.set(0, this.yaw, 0, 'YXZ')), _s.set(w, w, w));
+    this.world.group.matrix.multiplyMatrices(this.camInv, _a);
+    this.world.update(t, performance.now() / 1000);
+    const card = this.stage.card;
+    document.body.classList.toggle('blackout', !!card.lamp && card._terraceDark(t) > 0.4);
   }
 
   stop() {
@@ -296,6 +288,9 @@ export class SurfaceAR {
     this.canvas?.remove();
     for (const o of [this.flame, this.ring, this.shadow, this.cover]) if (o) this.stage.scene.remove(o);
     this.back?.removeFromParent();
+    this.proxy?.removeFromParent();
+    if (this.world) this.stage.scene.remove(this.world.group);
+    document.body.classList.remove('blackout');
     const sky = this.stage.card.sky;
     if (sky) {
       sky.group.rotation.x = 0;
