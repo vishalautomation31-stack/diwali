@@ -278,6 +278,7 @@ export class SurfaceAR {
     this.world.update(t, performance.now() / 1000);
     const card = this.stage.card;
     document.body.classList.toggle('blackout', !!card.lamp && card._terraceDark(t) > 0.4);
+    document.body.classList.toggle('hush', !!card.bridge && t < card.bridge.glow + 0.2);
   }
 
   stop() {
@@ -290,7 +291,7 @@ export class SurfaceAR {
     this.back?.removeFromParent();
     this.proxy?.removeFromParent();
     if (this.world) this.stage.scene.remove(this.world.group);
-    document.body.classList.remove('blackout');
+    document.body.classList.remove('blackout', 'hush');
     const sky = this.stage.card.sky;
     if (sky) {
       sky.group.rotation.x = 0;

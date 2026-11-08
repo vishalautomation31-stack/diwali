@@ -4,7 +4,7 @@ import * as THREE from '../lib/three.module.min.js';
 
 const PX = 112; // canvas pixels per em: crisp at phone sizes
 
-export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc', leading = 1.28, font = 'Eczar', phrases = false } = {}) {
+export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc', leading = 1.28, font = 'Eczar', phrases = false, noOrphan = false } = {}) {
   const pxPerUnit = PX / size;
   const maxPx = maxWidth * pxPerUnit;
   const c = document.createElement('canvas');
@@ -30,7 +30,7 @@ export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc'
         if (w > maxPx && j > i + 1) break;
         const slack = (maxPx - w) / maxPx;
         const atEnd = j === words.length;
-        const cost = 1 + (atEnd ? 0 : slack * slack) - (!atEnd && /[,.]$/.test(words[j - 1]) ? 0.6 : 0) + plan(j).cost;
+        const cost = 1 + (atEnd ? (noOrphan && j - i < 2 ? 0.9 : 0) : slack * slack) - (!atEnd && /[,.]$/.test(words[j - 1]) ? 0.6 : 0) + plan(j).cost;
         if (!best || cost < best.cost) best = { cost, next: j };
       }
       memo.set(i, best);

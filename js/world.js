@@ -164,6 +164,9 @@ export class World {
     this.textures = [];
     let seed = 73;
     this.rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    // a card can hold all this back: built quietly on its first line, lit only later
+    const b = scene.bridge;
+    this.plan = b ? { shift: scene.T.lines[0] + 1.6, glow: b.glow, show: b.show } : null;
     this._buildRangoli();
     this._buildArch();
     this._buildDiyas();
@@ -260,6 +263,14 @@ export class World {
       d.phase = this.rnd() * 6.28;
       d.scale = 0.92 + this.rnd() * 0.2;
     });
+    if (this.plan) {
+      const plan = this.plan, L = this.scene.T.lines;
+      [...spots].sort((a, b) => Math.abs(a.x) - Math.abs(b.x)).forEach((d, k) => { d.appear = plan.shift + 0.3 + k * 0.022; d.onAt = plan.glow + 0.15 + k * 0.045; });
+      // a lamp at each end, far apart; then one more for each of the next three lines, from the outside in
+      [[-0.72, L[0] + 0.5], [0.72, L[0] + 0.9], [-0.36, L[2] + 0.6], [0.36, L[3] + 0.6], [0, L[4] + 0.6]].forEach(([x, at]) => {
+        spots.push({ x, z: 0.1, appear: Math.min(at, plan.shift + 0.2) - 0.35, onAt: at, phase: this.rnd() * 6.28, scale: 1.55, lead: true });
+      });
+    }
     this.spots = spots;
     const n = spots.length;
     // when one lamp carries the card these go out early and catch again from the middle
@@ -316,7 +327,7 @@ export class World {
 
   _buildAir() {
     const rnd = this.rnd;
-    const tones = ['#f28f26', '#f6bf34', '#e06f16'].map((c) => new THREE.Color(c));
+    const tones = (this.plan ? ['#e9467a', '#f6bf34', '#f28f26'] : ['#f28f26', '#f6bf34', '#e06f16']).map((c) => new THREE.Color(c));
     // none directly between the phone and the card, so nothing crosses the words
     const clearOfWords = () => {
       for (;;) {
@@ -326,7 +337,7 @@ export class World {
     };
     this.petals = Array.from({ length: 180 }, () => clearOfWords()).map(([x, z]) => ({
       x, z, top: 2.3 + rnd() * 0.9,
-      at: 1.8 + rnd() * 27, speed: 0.24 + rnd() * 0.14, sway: 0.07 + rnd() * 0.12, phase: rnd() * 6.28,
+      at: (this.plan ? this.plan.show : 1.8) + rnd() * 27, speed: 0.24 + rnd() * 0.14, sway: 0.07 + rnd() * 0.12, phase: rnd() * 6.28,
       spin: 1.2 + rnd() * 2.4, tone: tones[Math.floor(rnd() * 3)], size: 0.036 + rnd() * 0.02,
     }));
     this.petalBatch = this._add(new Sprites(paintPetal(), this.petals.length, { order: 102 }));
@@ -341,18 +352,22 @@ export class World {
     const city = m ? Math.pow(1 - 0.92 * c._cityGone(t), 2) : 1;
     const strings = m ? Math.pow(1 - 0.86 * c._stringsGone(t), 2) : 1;
     const terrace = m ? 1 - 0.82 * c._terraceDark(t) : 1;
-    this.rangoliU.uP.value = smooth(-0.3, 1.5, t);
-    this.rangoliU.uLight.value = terrace * terrace;
+    const plan = this.plan;
+    const tw = plan ? t - plan.shift : t; // when this card builds its setting
+    const glow = plan ? smooth(plan.glow, plan.glow + 1.4, t) : 1;
+    const hush = plan ? 0.36 + 0.64 * glow : 1;
+    this.rangoliU.uP.value = smooth(-0.3, 1.5, tw);
+    this.rangoliU.uLight.value = terrace * terrace * hush;
     for (const s of this.strands) {
-      const d = t - s.at;
+      const d = tw - s.at;
       const sway = 0.06 * Math.exp(-Math.max(0, d) * 1.1) * Math.sin(d * 6) + 0.012 * Math.sin(time * 1.1 + s.phase);
-      s.batch.set(s.i, s.x, s.y + (1 - easeBack(d / 0.85)) * 1.6, s.z, s.w, s.h, sway, STAND, strings, strings, strings, clamp(d / 0.2, 0, 1));
+      s.batch.set(s.i, s.x, s.y + (1 - easeBack(d / 0.85)) * 1.6, s.z, s.w, s.h, sway, STAND, strings * hush, strings * hush, strings * hush, clamp(d / 0.2, 0, 1));
     }
     for (const b of new Set(this.strands.map((s) => s.batch))) b.flush();
-    const d0 = t - 0.45;
+    const d0 = tw - 0.45;
     this.swag.position.y = this.swagAt + (1 - easeBack(d0 / 0.85)) * 1.6;
     this.swag.material.opacity = clamp(d0 / 0.2, 0, 1);
-    this.swag.material.color.setScalar(strings);
+    this.swag.material.color.setScalar(strings * hush);
 
     this.spots.forEach((d, i) => {
       const flick = 1 + 0.08 * Math.sin(time * 13 + d.phase) + 0.05 * Math.sin(time * 29 + d.phase * 2);
@@ -360,33 +375,34 @@ export class World {
       const level = m ? Math.max(on * (1 - smooth(d.outAt, d.outAt + 0.25, t)), smooth(d.backAt, d.backAt + 0.2, t)) : on;
       const pop = easeBack((t - d.appear) / 0.4);
       const w = 0.17 * d.scale * Math.max(pop, 0.001), h = w * this.bowlAspect;
-      const body = 0.1 + 0.9 * Math.max(level, terrace * terrace);
+      const body = plan ? 0.34 + 0.66 * Math.max(level, glow) : 0.1 + 0.9 * Math.max(level, terrace * terrace);
       this.bowls.set(i, d.x, 0.004, d.z, w, h, 0, STAND, body, body, body, t > d.appear ? 1 : 0);
       this.flames.set(i, d.x, h * 0.72, d.z, 0.05 * d.scale, 0.125 * d.scale * flick, 0, STAND, 1, 1, 1, level);
       this.pools.set(i, d.x, 0.006, d.z, 0.56 * d.scale * (0.94 + 0.06 * flick), 0.56 * d.scale * (0.94 + 0.06 * flick), 0, FLAT, 1, 1, 1, 0.24 * level);
-      this.halos.set(i, d.x, h + 0.05, d.z, 0.3 * d.scale * flick, 0.3 * d.scale * flick, 0, FREE, 1, 1, 1, 0.6 * level);
+      const catches = d.lead ? 1 + 1.4 * Math.exp(-Math.max(0, t - d.onAt) * 2.5) * smooth(d.onAt, d.onAt + 0.05, t) : 1;
+      this.halos.set(i, d.x, h + 0.05, d.z, 0.3 * d.scale * flick * catches, 0.3 * d.scale * flick * catches, 0, FREE, 1, 1, 1, 0.6 * level);
     });
     this.pools.flush(); this.bowls.flush(); this.flames.flush(); this.halos.flush();
 
     this.hung.forEach((l, i) => {
-      const d = t - l.at;
+      const d = tw - l.at;
       const y = l.y + (1 - easeBack(d / 1.1)) * 1.7;
       const sway = 0.05 * Math.sin(time * 0.9 + l.phase) + 0.1 * Math.exp(-Math.max(0, d) * 0.9) * Math.sin(d * 4.5);
       const a = clamp(d / 0.25, 0, 1);
-      l.batch.set(l.i, l.x, y, l.z, l.w, l.h, sway, STAND, city, city, city, a);
+      l.batch.set(l.i, l.x, y, l.z, l.w, l.h, sway, STAND, city * hush, city * hush, city * hush, a);
       this.threads.set(i, l.x, y, l.z, 0.01, 2.2, 0, STAND, 1, 1, 1, a * (0.25 + 0.75 * city));
       const size = l.w * 3.2 * (0.95 + 0.05 * Math.sin(time * 2.1 + l.phase));
-      this.kandilGlow.set(i, l.x + Math.sin(sway) * l.h * 0.42, y - l.h * 0.4, l.z, size, size, 0, FREE, 1, 1, 1, 0.42 * a * city * city);
+      this.kandilGlow.set(i, l.x + Math.sin(sway) * l.h * 0.42, y - l.h * 0.4, l.z, size, size, 0, FREE, 1, 1, 1, 0.42 * a * city * city * glow);
     });
     this.kandils.forEach((b) => b.flush());
     this.threads.flush();
     this.kandilGlow.flush();
 
     this.bulbs.forEach((b, i) => {
-      const on = smooth(b.at, b.at + 0.35, t);
-      const tw = 0.68 + 0.32 * Math.sin(time * 2.7 + b.phase);
+      const on = smooth(b.at, b.at + 0.35, tw) * glow;
+      const twinkle = 0.68 + 0.32 * Math.sin(time * 2.7 + b.phase);
       const warm = 0.8 + 0.2 * b.tint;
-      this.bulbBatch.set(i, b.x, b.y, b.z, b.size, b.size, 0, FREE, 1, warm, 0.62 + 0.3 * b.tint, on * tw * city);
+      this.bulbBatch.set(i, b.x, b.y, b.z, b.size, b.size, 0, FREE, 1, warm, 0.62 + 0.3 * b.tint, on * twinkle * city);
     });
     this.bulbBatch.flush();
 
@@ -402,7 +418,7 @@ export class World {
     });
     this.petalBatch.flush();
 
-    const air = smooth(1, 3, t) * terrace;
+    const air = (plan ? smooth(plan.glow, plan.glow + 2, t) : smooth(1, 3, t)) * terrace;
     this.motes.forEach((p, i) => {
       const a = air * (0.32 + 0.34 * Math.sin(time * 0.8 + p.phase));
       this.moteBatch.set(i, p.x + Math.sin(time * 0.17 + p.phase) * 0.12, p.y + Math.sin(time * 0.23 + p.phase * 2) * 0.1, p.z + Math.cos(time * 0.13 + p.phase) * 0.12, p.size, p.size, 0, FREE, 1, 1, 1, Math.max(0, a));

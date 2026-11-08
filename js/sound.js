@@ -37,7 +37,7 @@ export class Crackle {
   // For cards with the sky show: light music underneath, and each firework heard as it bursts.
   // Writing the music takes a moment on a phone: done at the tap, while the camera is opening.
   prepareMusic() {
-    this.musicReady ||= import('./music.js?v=65a035480c').then(({ renderMusic }) => new Promise((res) => setTimeout(() => res(renderMusic()), 30)));
+    this.musicReady ||= (this.tune === 'tender' ? import('./tender.js?v=65a035480c') : import('./music.js?v=65a035480c')).then(({ renderMusic }) => new Promise((res) => setTimeout(() => res(renderMusic()), 30)));
     return this.musicReady;
   }
 
@@ -55,6 +55,7 @@ export class Crackle {
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(0.8, ctx.currentTime + 2.5);
+    this.musicGain = gain;
     // a little room around it
     const rev = ctx.createConvolver();
     const irLen = Math.round(ctx.sampleRate * 1.5);
@@ -76,6 +77,11 @@ export class Crackle {
     src.start();
     // no music from a tab nobody is looking at
     document.addEventListener('visibilitychange', () => (document.hidden ? ctx.suspend() : ctx.resume()));
+  }
+
+  // the card's own tune steps aside while another player has the floor
+  duckMusic(on) {
+    if (this.musicGain) this.musicGain.gain.setTargetAtTime(on ? 0 : 0.8, this.ctx.currentTime, 0.25);
   }
 
   // A far firework: a soft thump a moment after the flash, then a scatter of crackles.

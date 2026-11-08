@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#140f38">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; media-src 'self' blob: mediastream:; worker-src 'self' blob: data:; base-uri 'self'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; media-src 'self' blob: mediastream:; frame-src https://www.youtube-nocookie.com; worker-src 'self' blob: data:; base-uri 'self'; form-action 'none'">
 <!-- World tracking: the XR Engine by Niantic Spatial, Inc. Copyright 2026 Niantic Spatial, Inc. Used under the XR Engine License Agreement (lib/xr/LICENSE), which disclaims all warranties. -->
 <title>Happy Diwali</title>
 <link rel="preload" href="fonts/eczar-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
@@ -34,6 +34,8 @@
     <p id="hint" class="hint" hidden>Point at a table or the floor</p>
     <button id="nocam" class="btn" type="button" hidden>Play without camera</button>
     <button id="replay" class="btn" type="button" hidden>Replay</button>
+    <div id="player" class="player" hidden></div>
+    <button id="song" class="btn" type="button" hidden>Our song</button>
     <button id="sound" class="icon sound" type="button" hidden aria-label="Sound" aria-pressed="true"></button>
     <button id="retry" class="icon" type="button" hidden aria-label="Try again">&#8635;</button>
   </div>

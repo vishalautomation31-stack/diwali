@@ -65,6 +65,8 @@ export class CardScene {
     this.motion = card.motion || null; // what a name of its own does: bulbs, or climbing letters
     // a card can carry its own timing (a longer wish); otherwise the sequence in the brief
     this.T = { ...TIMES, ...(card.times || {}), lines: card.times?.lines || TIMES.lines[this.choreo] };
+    // one card keeps its light back until two of its image lines have arrived
+    this.bridge = this.motion === 'bridge' ? { glow: this.T.lines[card.lines.length + 1], show: this.T.lines[card.lines.length + 2] } : null;
     this.root = new THREE.Group();
     this.root.name = 'card';
     this.content = new THREE.Group(); // everything that lifts and lights
@@ -560,7 +562,11 @@ export class CardScene {
   _buildSky() {
     const T = this.T, L = T.lines;
     let quiet = [], volleys = [T.draw[1] + 0.2], fountainsFrom = L[L.length - 1];
-    if (this.choreo === 'stars') {
+    if (this.bridge) {
+      quiet = [[T.draw[0], this.bridge.show - 1]];
+      volleys = [this.bridge.show + 0.1, this.bridge.show + 1.8];
+      fountainsFrom = this.bridge.show;
+    } else if (this.choreo === 'stars') {
       quiet = [[L[1] - 0.3, this.clearAt], [L[2] - 0.3, L[4]]];
       volleys.push(this.clearAt + 0.3, L[4] + 0.3);
       fountainsFrom = L[4] + 0.2;
@@ -586,6 +592,7 @@ export class CardScene {
   // the children's sparklers: how hard they burn at time t (0 out .. 1.6 flaring)
   _kidRate(t) {
     if (t < 1.0) return 0;
+    if (this.bridge) return 0.6;
     if (this.choreo === 'lamp') return 0.65 * (1 - smooth(this.T.lines[2] - 0.1, this.T.lines[2] + 0.8, t) + smooth(this.T.lines[4], this.T.lines[4] + 0.8, t));
     if (this.choreo === 'stars') return 0.65 * (1 - 0.8 * this._quiet(t));
     if (this.choreo === 'fade') {
@@ -598,6 +605,7 @@ export class CardScene {
 
   _fireworksOn(t) {
     if (t < 1.8) return false;
+    if (this.bridge) return t > this.bridge.show;
     if (this.choreo === 'lamp') return t < this.T.lines[2] - 0.3 || t > this.T.lines[4];
     // none under the words
     if (this.choreo === 'stars') return t < this.T.lines[0] || t > this.T.fromWrite[0];
@@ -697,10 +705,18 @@ export class CardScene {
     this.veil.renderOrder = 75;
     this.words.add(this.veil);
     this.lineObjs = this.card.lines.map((text) => {
-      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' || this.motion ? { size: this.card.surface ? 0.08 : 0.072, maxWidth: 0.7, phrases: /,\s/.test(text) } : { size: 0.072, maxWidth: 0.78 });
+      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' || this.motion ? { size: this.bridge ? 0.074 : this.card.surface ? 0.08 : 0.072, maxWidth: this.bridge ? 0.76 : 0.7, phrases: /,\s/.test(text) || !!this.bridge, noOrphan: !!this.bridge } : { size: 0.072, maxWidth: 0.78 });
       this.words.add(L.group);
       return L;
     });
+    // its first line lands in two halves, the second as the setting starts to build
+    if (this.bridge) {
+      let after = false;
+      for (const p of [...this.lineObjs[0].parts].sort((a, b) => a.order - b.order)) {
+        if (after) p.delay = 1;
+        if (/,$/.test(p.word)) after = true;
+      }
+    }
     if (this.choreo === 'stars') {
       this.lineObjs.forEach((L) => this._stagger(L));
       this.clearAt = this.T.lines[1] + (this.lineObjs[1].parts.find((p) => p.delay > 0)?.delay ?? 2);
@@ -708,7 +724,7 @@ export class CardScene {
     // lines set ahead of time as images play after the live ones, just like them
     (lineImages || []).forEach((img, k) => {
       const L = makeImageLine(img, this.card.imageLines[k].width);
-      L.group.position.y = this.card.geom.box[1] - 0.026 - L.height / 2 - this.textY;
+      if (!this.bridge) L.group.position.y = this.card.geom.box[1] - 0.026 - L.height / 2 - this.textY;
       this.words.add(L.group);
       this.lineObjs.push(L);
     });
@@ -742,6 +758,7 @@ export class CardScene {
   }
 
   _buildLogo(logo) {
+    if (this.card.noMark) return;
     const at = this.card.style.logoAt;
     if (!logo || !logo.layout) return;
     const [W, H] = logo.layout.size; // the original file, 262 x 58
@@ -938,7 +955,7 @@ export class CardScene {
 
     // 5. the wish, one line at a time
     const firstImage = this.card.lines.length;
-    const deeper = firstImage < L.length ? smooth(L[firstImage] - 0.4, L[firstImage] + 0.4, t) : 0;
+    const deeper = firstImage < L.length && !this.bridge ? smooth(L[firstImage] - 0.4, L[firstImage] + 0.4, t) : 0;
     this.veil.material.opacity = (0.42 + 0.26 * deeper) * smooth(L[0] - 0.3, L[0] + 0.5, t);
     this.veil.position.y = -0.04 - 0.06 * deeper;
     if (ch === 'stars') this.veil.material.opacity *= 1 - 0.8 * smooth(T.fromWrite[0], T.fromWrite[0] + 1, t);
@@ -984,6 +1001,7 @@ export class CardScene {
   }
 
   _night(t) {
+    if (this.bridge) return 0.62 + 0.38 * smooth(this.bridge.glow, this.bridge.glow + 1.6, t);
     if (this.choreo === 'lamp') {
       const L = this.T.lines;
       return (0.8 + 0.2 * smooth(L[0], L[0] + 2.6, t)) * (1 - 0.82 * this._terraceDark(t));
@@ -1003,6 +1021,10 @@ export class CardScene {
 
   _nameGlow(t) {
     const d1 = this.T.draw[1];
+    if (this.bridge) {
+      const low = 1 - 0.8 * smooth(d1 + 0.1, this.T.lines[0] + 2.2, t);
+      return Math.max(low, smooth(this.bridge.glow + 0.9, this.bridge.glow + 1.9, t));
+    }
     if (this.choreo === 'lamp') {
       const m = this.lamp;
       const low = 1 - 0.8 * smooth(d1 + 0.1, this.T.lines[0] + 2.2, t); // dims after it is written
@@ -1041,12 +1063,12 @@ export class CardScene {
       return (t > m.passFrom && t < m.passEnd + 0.1) || (t > m.name - 1.1 && t < m.name);
     }
     if (this.choreo !== 'stream') return false;
-    const s = this.T.lines[2];
+    const s = this.bridge ? this.bridge.glow + 0.4 : this.T.lines[2];
     return t > s && t < s + 1.8;
   }
 
   _stream(t) {
-    const s = this.choreo === 'lamp' ? this.lamp.name - 1.1 : this.T.lines[2];
+    const s = this.choreo === 'lamp' ? this.lamp.name - 1.1 : this.bridge ? this.bridge.glow + 0.4 : this.T.lines[2];
     if (t < s || this.streamDone || !this.diyas.length || !this.outlinePts.length) return;
     this.streamDone = true;
     for (const d of this.diyas) {
@@ -1066,7 +1088,10 @@ export class CardScene {
     const ch = this.choreo;
     this.diyas.forEach((d, i) => {
       let level = 0, boost = 1;
-      if (ch === 'lamp') {
+      if (this.bridge) {
+        const g = this.bridge.glow;
+        level = smooth(g + 0.2 + i * 0.1, g + 0.5 + i * 0.1, t);
+      } else if (ch === 'lamp') {
         const L = this.T.lines;
         const lit = smooth(L[0] + 0.2 + i * 0.26, L[0] + 0.5 + i * 0.26, t);
         if (d.big) {

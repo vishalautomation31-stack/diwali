@@ -127,6 +127,29 @@ async function main() {
   stage.setCard(scene);
   stage.useFree();
   const sound = new Crackle();
+  sound.tune = card.show?.tune;
+  // A song plays from where it lives, in the video site's own player, for only the part chosen:
+  // nothing is copied, and nothing loads from there until the button is pressed.
+  const closeSong = () => {
+    if (!$('#player')) return;
+    $('#player').replaceChildren();
+    show($('#player'), false);
+    sound.duckMusic(false);
+  };
+  if (card.songEmbed && $('#song')) $('#song').onclick = () => {
+    if (!$('#player').hidden) return closeSong();
+    const e = card.songEmbed;
+    const q = new URLSearchParams({ autoplay: 1, playsinline: 1, rel: 0, start: e.start || 0 });
+    if (e.end) q.set('end', e.end);
+    const f = document.createElement('iframe');
+    f.src = `https://www.youtube-nocookie.com/embed/${e.id}?${q}`;
+    f.allow = 'autoplay; encrypted-media';
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    f.title = 'Our song';
+    $('#player').appendChild(f);
+    show($('#player'));
+    sound.duckMusic(true);
+  };
   scene.onBurst = (power, x) => sound.boom(power, x);
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
@@ -151,6 +174,7 @@ async function main() {
     if (state.began && state.t > scene.T.end && !state.replayShown) {
       state.replayShown = true;
       show($('#replay'));
+      if (card.songEmbed && $('#song')) show($('#song'));
     }
   }
   function frame(now) {
@@ -171,6 +195,7 @@ async function main() {
     state.replayShown = false;
     scene.reset();
     show($('#replay'), false);
+    if ($('#song')) { show($('#song'), false); closeSong(); }
     if (card.show?.music) sound.playMusic();
   }
 
@@ -178,7 +203,7 @@ async function main() {
     state.mode = 'free';
     state.lead = 0;
     if (state.ar) { state.ar.stop(); state.ar = null; }
-    document.body.classList.remove('ar', 'lit', 'surface', 'blackout');
+    document.body.classList.remove('ar', 'lit', 'surface', 'blackout', 'hush');
     show($('#hint'), false);
     show($('#nocam'), false);
     stage.useFree();
