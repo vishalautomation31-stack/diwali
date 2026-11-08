@@ -5,9 +5,10 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=36bcaac838';
-import { makeLine, makeImageLine } from './text.js?v=36bcaac838';
-import { SkyShow, planShow } from './sky.js?v=36bcaac838';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=717dd6026e';
+import { makeLine, makeImageLine } from './text.js?v=717dd6026e';
+import { SkyShow, planShow } from './sky.js?v=717dd6026e';
+import { paintStrand, paintSwag } from './marigold.js?v=717dd6026e';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -59,7 +60,7 @@ const LIT_FS = /* glsl */ `
 export class CardScene {
   constructor({ card, poster, layers, shadows, sceneInfo, logo, hand, lineImages }) {
     this.card = card;
-    this.choreo = ['stream', 'stars'].includes(card.choreo) ? card.choreo : 'fade';
+    this.choreo = ['stream', 'stars', 'lamp'].includes(card.choreo) ? card.choreo : 'fade';
     // a card can carry its own timing (a longer wish); otherwise the sequence in the brief
     this.T = { ...TIMES, ...(card.times || {}), lines: card.times?.lines || TIMES.lines[this.choreo] };
     this.root = new THREE.Group();
@@ -202,6 +203,146 @@ export class CardScene {
       d.seed = Math.random() * 100;
       this.diyaFx.add(d.glow, d.core);
     }
+    if (this.choreo === 'lamp') this._planLamp();
+  }
+
+  // One lamp carries it. The fireworks stop, the city and the strings go out, then the lamps one at
+  // a time, farthest first, until only the big one burns; its flame goes up to the parapet and along
+  // it both ways, the strings and the city come back, and the name is the last thing it reaches.
+  _planLamp() {
+    const L = this.T.lines;
+    const big = this.diyas.find((d) => d.big);
+    const row = this.diyas.filter((d) => !d.big);
+    const first = row.reduce((a, b) => (Math.abs(a.x - big.x) < Math.abs(b.x - big.x) ? a : b));
+    const SPEED = 0.36; // card widths a second along the parapet
+    const m = (this.lamp = { big, first, row, speed: SPEED });
+    m.cityOut = [L[2] + 0.1, L[2] + 1.1];
+    m.stringsOut = [L[2] + 0.6, L[2] + 1.4];
+    [...row].sort((a, b) => Math.abs(b.x - big.x) - Math.abs(a.x - big.x)).forEach((d, k) => { d.outAt = L[2] + 1.3 + k * 0.3; });
+    m.lastOut = L[2] + 1.3 + (row.length - 1) * 0.3 + 0.28;
+    m.passFrom = L[3] + 0.15;
+    m.t0 = m.passFrom + 0.5; // when it reaches the parapet
+    row.forEach((d) => { d.backAt = m.t0 + Math.abs(d.x - first.x) / SPEED; });
+    m.passEnd = Math.max(...row.map((d) => d.backAt));
+    m.ends = [Math.min(...row.map((d) => d.x)), Math.max(...row.map((d) => d.x))];
+    m.stringsBack = [m.passEnd - 0.1, m.passEnd + 0.7];
+    m.cityBack = [m.passEnd + 0.2, m.passEnd + 1.1];
+    m.name = m.passEnd + 0.95;
+    this.flames = [0, 1].map(() => {
+      const q = glowQuad(starTexture(64), 0.13, '#ffc46e', 62);
+      this.content.add(q);
+      return q;
+    });
+    // the one lamp's light on the dark terrace; it stops at the card's edge
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 230;
+    const g = c.getContext('2d');
+    const cx = (big.x + 0.5) * 256, cy = ((0.2 - big.y) / 0.9) * 230;
+    const fill = g.createRadialGradient(cx, cy, 0, cx, cy, 135);
+    fill.addColorStop(0, 'rgba(255,176,90,0.7)');
+    fill.addColorStop(0.4, 'rgba(255,132,52,0.22)');
+    fill.addColorStop(1, 'rgba(255,110,40,0)');
+    g.fillStyle = fill;
+    g.fillRect(0, 0, 256, 230);
+    this.pool = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.9), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, depthWrite: false, opacity: 0, blending: THREE.AdditiveBlending, toneMapped: false }));
+    this.pool.position.set(0, -0.25, 0.12);
+    this.pool.renderOrder = 44;
+    this.content.add(this.pool);
+  }
+
+  _span(out, back, t) {
+    return smooth(out[0], out[1], t) * (1 - smooth(back[0], back[1], t));
+  }
+
+  _cityGone(t) { return this._span(this.lamp.cityOut, this.lamp.cityBack, t); }
+  _stringsGone(t) { return this._span(this.lamp.stringsOut, this.lamp.stringsBack, t); }
+  _terraceDark(t) { const m = this.lamp; return this._span([m.cityOut[0], m.lastOut], [m.t0, m.passEnd + 0.9], t); }
+  _nameOut(t) { const m = this.lamp; return this._span(m.cityOut, [m.name, m.name + 0.5], t); }
+
+  // only this choreography darkens layers one by one
+  _layerLight(n, t) {
+    if (this.choreo !== 'lamp') return 1;
+    if (n === 2 || n === 3) return 1 - 0.8 * this._cityGone(t);
+    if (n === 8) return 1 - 0.8 * this._stringsGone(t);
+    return 1;
+  }
+
+  _passFlame(t, dt) {
+    const m = this.lamp;
+    for (const q of this.flames) q.material.opacity = 0;
+    if (t < m.passFrom || t > m.passEnd + 0.12) return;
+    const z = this._layerZ(7, t) + 0.016;
+    const place = (q, x, y) => {
+      q.position.set(x, y, z);
+      const s = 0.85 + 0.35 * Math.random();
+      q.scale.set(s, s, 1);
+      q.material.opacity = 0.95;
+      if (dt > 0) this.sparks.emit(x, y, z - 0.004, Math.round(dt * 210 + Math.random()), { speed: 0.26, ttl: 0.45, size: 0.009 });
+    };
+    const { big, first } = m;
+    const onRow = first.y + first.r * 0.6;
+    if (t < m.t0) {
+      const e = smooth(m.passFrom, m.t0, t), from = big.y + big.r * 0.6;
+      place(this.flames[0], big.x + (first.x - big.x) * e, from + (onRow - from) * e);
+      return;
+    }
+    m.ends.forEach((end, k) => {
+      const dir = k ? 1 : -1;
+      const x = first.x + dir * m.speed * (t - m.t0);
+      if ((dir < 0 && x >= end) || (dir > 0 && x <= end)) place(this.flames[k], x, onRow + 0.012 * Math.abs(Math.sin(x * 22)));
+    });
+  }
+
+  _buildToran() {
+    const L = this.T.lines;
+    const box = this.card.geom.box;
+    const R = 0.0165, GAP = R * 1.55;
+    const curve = (x) => box[3] + 0.058 - 0.026 * (1 - Math.pow(x / 0.5, 2));
+    // each letter's span: contours that overlap across are one letter
+    const spans = this.path.contours.map((c) => { const xs = c.pts.map((p) => p[0]); return [Math.min(...xs), Math.max(...xs)]; }).sort((a, b) => a[0] - b[0]);
+    const letters = [];
+    for (const s of spans) {
+      const last = letters[letters.length - 1];
+      if (last && s[0] < last[1]) last[1] = Math.max(last[1], s[1]);
+      else letters.push([...s]);
+    }
+    const drops = [letters[0][0] - 0.026];
+    for (let i = 0; i + 1 < letters.length; i++) drops.push((letters[i][1] + letters[i + 1][0]) / 2);
+    drops.push(letters[letters.length - 1][1] + 0.026);
+    const mid = (drops.length - 1) / 2;
+    const material = (canvas) => new THREE.MeshBasicMaterial({ map: this._tex(canvas), transparent: true, depthWrite: false, toneMapped: false, opacity: 0 });
+    const swag = paintSwag(curve, -0.49, 0.49, R, GAP * 0.96, 17);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(swag.w, swag.h), material(swag.canvas));
+    line.renderOrder = 51;
+    line.position.set(swag.cx, swag.cy, 0.024);
+    this.content.add(line);
+    this.toran = [{ mesh: line, y: swag.cy, at: L[0], phase: 0 }];
+    drops.forEach((x, k) => {
+      const off = Math.abs(k - mid) / mid; // 0 in the middle, 1 at the ends
+      const y = curve(x);
+      const bottom = box[1] + 0.02 + 0.075 * off + (k % 2 ? 0.05 : 0);
+      const count = Math.max(2, Math.round((y - bottom) / GAP));
+      const s = paintStrand(count, R, GAP, 5 + k * 3);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(s.w, s.h).translate(0, -s.h / 2, 0), material(s.canvas));
+      mesh.renderOrder = 50;
+      mesh.position.set(x, y, 0.024);
+      this.content.add(mesh);
+      this.toran.push({ mesh, y, at: L[0] + 0.14 + Math.abs(k - mid) * 0.08, phase: k * 1.7, strand: true });
+    });
+  }
+
+  _swayToran(t, time) {
+    const light = 1 - 0.86 * this._stringsGone(t);
+    for (const s of this.toran) {
+      const d = t - s.at;
+      s.mesh.visible = d > 0;
+      if (d <= 0) continue;
+      s.mesh.position.y = s.y + (1 - easeBack(d / 0.8)) * 0.75;
+      s.mesh.material.opacity = clamp01(d / 0.15);
+      s.mesh.material.color.setScalar(light);
+      if (s.strand) s.mesh.rotation.z = 0.1 * Math.exp(-d * 1.2) * Math.sin(d * 6.5) + 0.016 * Math.sin(time * 1.25 + s.phase);
+    }
   }
 
   _buildName() {
@@ -247,6 +388,7 @@ export class CardScene {
     this.fireSpots = [[-0.42, 0.14], [-0.3, 0.075], [-0.12, 0.09], [0.04, 0.08], [0.2, 0.1]]; // low sky, under the words
     this.fireColors = ['#f6ad2b', '#fff3dc', '#e9467a', '#f2862b', '#ffd27a'].map((c) => new THREE.Color(c));
     if (this.choreo === 'stars') this._buildStars();
+    if (this.choreo === 'lamp') this._buildToran();
   }
 
   // Small stars across the open sky, coming up outwards from the name. Never inside the name's
@@ -325,6 +467,10 @@ export class CardScene {
       quiet = [[L[1] - 0.3, L[2] + 0.3]];
       volleys.push(L[2] + 0.7, L[3] + 0.3);
       fountainsFrom = L[3];
+    } else if (this.choreo === 'lamp') {
+      quiet = [[L[2] - 1.2, L[4]]]; // nothing bursts while it is dark, and the last sparks have fallen by then
+      volleys.push(L[1] + 0.4, L[4] + 0.1);
+      fountainsFrom = L[4];
     } else {
       volleys.push(L[2] + 1.2);
       fountainsFrom = L[3] ?? L[L.length - 1];
@@ -337,6 +483,7 @@ export class CardScene {
   // the children's sparklers: how hard they burn at time t (0 out .. 1.6 flaring)
   _kidRate(t) {
     if (t < 1.0) return 0;
+    if (this.choreo === 'lamp') return 0.65 * (1 - smooth(this.T.lines[2] - 0.1, this.T.lines[2] + 0.8, t) + smooth(this.T.lines[4], this.T.lines[4] + 0.8, t));
     if (this.choreo === 'stars') return 0.65 * (1 - 0.8 * this._quiet(t));
     if (this.choreo === 'fade') {
       const L = this.T.lines;
@@ -348,6 +495,7 @@ export class CardScene {
 
   _fireworksOn(t) {
     if (t < 1.8) return false;
+    if (this.choreo === 'lamp') return t < this.T.lines[2] - 0.3 || t > this.T.lines[4];
     // none under the words
     if (this.choreo === 'stars') return t < this.T.lines[0] || t > this.T.fromWrite[0];
     if (this.choreo === 'fade') {
@@ -446,7 +594,7 @@ export class CardScene {
     this.veil.renderOrder = 75;
     this.words.add(this.veil);
     this.lineObjs = this.card.lines.map((text) => {
-      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : { size: 0.072, maxWidth: 0.78 });
+      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' ? { size: 0.072, maxWidth: 0.7, phrases: /,\s/.test(text) } : { size: 0.072, maxWidth: 0.78 });
       this.words.add(L.group);
       return L;
     });
@@ -454,7 +602,7 @@ export class CardScene {
       this.lineObjs.forEach((L) => this._stagger(L));
       this.clearAt = this.T.lines[1] + (this.lineObjs[1].parts.find((p) => p.delay > 0)?.delay ?? 2);
     }
-    // lines set ahead of time as images play after the live ones, the same way
+    // lines set ahead of time as images play after the live ones, just like them
     (lineImages || []).forEach((img, k) => {
       const L = makeImageLine(img, this.card.imageLines[k].width);
       L.group.position.y = this.card.geom.box[1] - 0.026 - L.height / 2 - this.textY;
@@ -609,7 +757,7 @@ export class CardScene {
     }
     // the sky show lights the card a little as each one bursts
     const night = this._night(t) + (this.sky ? 0.09 * this.sky.flash : 0);
-    for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.setScalar(night);
+    for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.setScalar(night * this._layerLight(l.n, t));
     const enter = this.introFade ? smooth(0, 0.35, t) : 1; // camera: fade the render in over the print
     this.plate.material.opacity = enter;
     for (const l of this.layers) {
@@ -636,7 +784,7 @@ export class CardScene {
       u.uTime.value = time;
     }
     // with no printed card under it, the outline only exists once the spark has written it
-    const inked = this.card.surface ? smooth(d1 - 0.3, d1 + 0.9, t) : 1;
+    const inked = (this.card.surface ? smooth(d1 - 0.3, d1 + 0.9, t) : 1) * (ch === 'lamp' ? 1 - 0.8 * this._nameOut(t) : 1);
     this.print.material.uniforms.uOpacity.value = inked * enter * (0.9 - 0.25 * smooth(d0, d0 + 0.6, t) + 0.25 * smooth(d1, d1 + 1.5, t));
     const drawing = t >= d0 && t < d1;
     const flyingIn = ch === 'stars' && t >= d0 - ENTRY && t < d0;
@@ -690,7 +838,12 @@ export class CardScene {
     this._logo(t, time);
 
     // 7. the light stream (one choreography), the children's sparklers, far fireworks, idle embers
-    if (ch === 'stream') this._stream(t);
+    if (ch === 'stream' || ch === 'lamp') this._stream(t);
+    if (ch === 'lamp') {
+      this._swayToran(t, time);
+      this._passFlame(t, dt);
+      this.pool.material.opacity = 0.8 * this._terraceDark(t) * (0.9 + 0.1 * Math.sin(time * 11 + this.lamp.big.seed));
+    }
     if (ch === 'stars') {
       const u = this.starField.mat.uniforms;
       u.uAge.value = t - L[0];
@@ -718,6 +871,10 @@ export class CardScene {
   }
 
   _night(t) {
+    if (this.choreo === 'lamp') {
+      const L = this.T.lines;
+      return (0.8 + 0.2 * smooth(L[0], L[0] + 2.6, t)) * (1 - 0.82 * this._terraceDark(t));
+    }
     if (this.choreo === 'stars') {
       const L = this.T.lines;
       return 0.84 - 0.22 * this._quiet(t) + 0.16 * smooth(L[4], L[4] + 1.4, t);
@@ -733,6 +890,11 @@ export class CardScene {
 
   _nameGlow(t) {
     const d1 = this.T.draw[1];
+    if (this.choreo === 'lamp') {
+      const m = this.lamp;
+      const low = 1 - 0.8 * smooth(d1 + 0.1, this.T.lines[0] + 2.2, t); // dims after it is written
+      return Math.max(low * (1 - smooth(m.cityOut[0], m.cityOut[1], t)), smooth(m.name + 0.5, m.name + 0.9, t));
+    }
     if (this.choreo === 'stars') {
       // warm while it is written, dim under the smoke, full once it clears, low while the words
       // carry it, full again after
@@ -753,6 +915,7 @@ export class CardScene {
   }
 
   _relight(t) {
+    if (this.choreo === 'lamp') return t < this.lamp.name ? -1 : Math.min(1.5, (t - this.lamp.name) / 0.75);
     if (this.choreo !== 'fade') return -1;
     const s = this.T.lines[2];
     if (t < s) return -1;
@@ -760,13 +923,17 @@ export class CardScene {
   }
 
   _streamActive(t) {
+    if (this.choreo === 'lamp') {
+      const m = this.lamp;
+      return (t > m.passFrom && t < m.passEnd + 0.1) || (t > m.name - 1.1 && t < m.name);
+    }
     if (this.choreo !== 'stream') return false;
     const s = this.T.lines[2];
     return t > s && t < s + 1.8;
   }
 
   _stream(t) {
-    const s = this.T.lines[2];
+    const s = this.choreo === 'lamp' ? this.lamp.name - 1.1 : this.T.lines[2];
     if (t < s || this.streamDone || !this.diyas.length || !this.outlinePts.length) return;
     this.streamDone = true;
     for (const d of this.diyas) {
@@ -786,7 +953,16 @@ export class CardScene {
     const ch = this.choreo;
     this.diyas.forEach((d, i) => {
       let level = 0, boost = 1;
-      if (ch === 'fade' || ch === 'stars') {
+      if (ch === 'lamp') {
+        const L = this.T.lines;
+        const lit = smooth(L[0] + 0.2 + i * 0.26, L[0] + 0.5 + i * 0.26, t);
+        if (d.big) {
+          level = lit;
+          boost = 1 + 0.6 * this._terraceDark(t);
+        } else {
+          level = Math.max(lit * (1 - smooth(d.outAt, d.outAt + 0.28, t)), smooth(d.backAt, d.backAt + 0.2, t));
+        }
+      } else if (ch === 'fade' || ch === 'stars') {
         const s = this.T.lines[ch === 'fade' ? 3 : 4];
         level = smooth(s + i * 0.12, s + i * 0.12 + 0.35, t);
       } else {

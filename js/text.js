@@ -101,7 +101,7 @@ export function makeLine(text, { size = 0.07, maxWidth = 0.84, color = '#fff3dc'
 }
 
 // A line already typeset as an image, for scripts whose joined letters must be shaped ahead of time.
-// One quad; width in card units. Same shape as makeLine's result, so it plays the same way.
+// One quad; width in card units. Same shape as makeLine's result, so it plays alike.
 export function makeImageLine(img, width) {
   const tex = new THREE.Texture(img);
   tex.colorSpace = THREE.SRGBColorSpace;

@@ -1,7 +1,7 @@
 // One renderer for both versions. No camera: the card floats full screen in the night and tilts
 // with the phone. Camera: the card's group is pinned to the printed card by the tracker.
 import * as THREE from '../lib/three.module.min.js';
-import { CARD_H } from './scene.js?v=36bcaac838';
+import { CARD_H } from './scene.js?v=717dd6026e';
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 
@@ -139,7 +139,7 @@ export class Stage {
     this.camera.updateMatrixWorld(true);
   }
 
-  // projection from the tracker (MindAR), in the same way MindAR's own three.js wrapper does it
+  // projection from the tracker (MindAR), as MindAR's own three.js wrapper does it
   setARProjection(proj, inputW, inputH, video) {
     this.ar = { proj, inputW, inputH, video };
     this.resize();
