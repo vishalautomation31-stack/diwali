@@ -5,11 +5,11 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=65a035480c';
-import { makeLine, makeImageLine } from './text.js?v=65a035480c';
-import { SkyShow, planShow } from './sky.js?v=65a035480c';
-import { paintStrand, paintSwag } from './marigold.js?v=65a035480c';
-import { Sprites, FREE } from './sprites.js?v=65a035480c';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=748e8ec2ef';
+import { makeLine, makeImageLine } from './text.js?v=748e8ec2ef';
+import { SkyShow, planShow } from './sky.js?v=748e8ec2ef';
+import { paintStrand, paintSwag } from './marigold.js?v=748e8ec2ef';
+import { Sprites, FREE } from './sprites.js?v=748e8ec2ef';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));

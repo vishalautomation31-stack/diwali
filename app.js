@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=65a035480c';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=748e8ec2ef';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -71,7 +71,7 @@ async function main() {
   if (params.has('show')) card.show = { sky: true, music: true };
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=65a035480c'), import('./js/scene.js?v=65a035480c'), import('./js/sound.js?v=65a035480c')]);
+  const modsP = Promise.all([import('./js/stage.js?v=748e8ec2ef'), import('./js/scene.js?v=748e8ec2ef'), import('./js/sound.js?v=748e8ec2ef')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, the optional near layers 10 to 13, a card's own parts 14 to 16, and their shadows
@@ -154,10 +154,10 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = card.surface ? Promise.resolve({ ok: true, note: 'surface' }) : mind ? import('./js/ar.js?v=65a035480c').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = card.surface ? Promise.resolve({ ok: true, note: 'surface' }) : mind ? import('./js/ar.js?v=748e8ec2ef').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
   // the world-tracking engine is large: it comes down while the page is still loading
-  const surfaceP = card.surface ? import('./js/surface.js?v=65a035480c').then(async (m) => { await m.loadEngine(); return m; }) : null;
+  const surfaceP = card.surface ? import('./js/surface.js?v=748e8ec2ef').then(async (m) => { await m.loadEngine(); return m; }) : null;
   surfaceP?.catch((e) => log('engine failed', e));
 
   // ---------- the loop ----------
@@ -280,7 +280,7 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=65a035480c');
+      const { CameraAR } = await import('./js/ar.js?v=748e8ec2ef');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,

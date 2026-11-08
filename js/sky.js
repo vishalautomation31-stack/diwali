@@ -6,7 +6,7 @@
 // Each spark is a short streak from where it is back along its path, the way a real one reads to
 // the eye: long and thin while it is fast, a point of light when it has slowed and hangs.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=65a035480c';
+import { glowQuad, radialTexture } from './fx.js?v=748e8ec2ef';
 
 const STAR = 1, EMBER = 2, POP = 3, FOUNTAIN = 4;
 const MAX = 3000;

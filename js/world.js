@@ -3,9 +3,9 @@
 // petals that fall and stay, and dust in the air. World units are card widths: x along the card, y up
 // from the surface, +z towards whoever placed it. All of it is a function of t, so Replay is exact.
 import * as THREE from '../lib/three.module.min.js';
-import { radialTexture } from './fx.js?v=65a035480c';
-import { paintStrand, paintSwag } from './marigold.js?v=65a035480c';
-import { Sprites, FREE, STAND, FLAT, canvasTexture, flameTexture } from './sprites.js?v=65a035480c';
+import { radialTexture } from './fx.js?v=748e8ec2ef';
+import { paintStrand, paintSwag } from './marigold.js?v=748e8ec2ef';
+import { Sprites, FREE, STAND, FLAT, canvasTexture, flameTexture } from './sprites.js?v=748e8ec2ef';
 
 const DEG = Math.PI / 180;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));

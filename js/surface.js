@@ -3,10 +3,10 @@
 // Agreement: lib/xr/LICENSE). The engine draws the camera on its own canvas under the page's; this
 // file turns its camera pose into the card's pose, and leaves the rest of the page as it is.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=65a035480c';
-import { CARD_H } from './scene.js?v=65a035480c';
-import { World } from './world.js?v=65a035480c';
-import { flameTexture } from './sprites.js?v=65a035480c';
+import { glowQuad, radialTexture } from './fx.js?v=748e8ec2ef';
+import { CARD_H } from './scene.js?v=748e8ec2ef';
+import { World } from './world.js?v=748e8ec2ef';
+import { flameTexture } from './sprites.js?v=748e8ec2ef';
 
 const CAMERA_Y = 1.3;    // how high the engine's world puts the camera; the surface is y = 0
 const AIM_Y = -0.2;      // where on the screen the flame sits (-1 bottom, 1 top): the card stands up from there
