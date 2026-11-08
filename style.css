@@ -63,6 +63,8 @@ body.ar .night { display: none; }
   pointer-events: none;
 }
 body.lit .cam::after { opacity: 1; }
+/* a card standing in a real room: the room stays in view, at evening light */
+body.surface .cam::after { background: radial-gradient(95% 75% at 50% 50%, rgba(8, 6, 26, 0.18), rgba(8, 6, 26, 0.62)); }
 
 /* a test link only (?stats) */
 .stats {

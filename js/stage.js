@@ -1,7 +1,7 @@
 // One renderer for both versions. No camera: the card floats full screen in the night and tilts
 // with the phone. Camera: the card's group is pinned to the printed card by the tracker.
 import * as THREE from '../lib/three.module.min.js';
-import { CARD_H } from './scene.js?v=8de2705763';
+import { CARD_H } from './scene.js?v=36bcaac838';
 
 const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _s = new THREE.Vector3();
 
@@ -67,6 +67,7 @@ export class Stage {
   // ---------- no camera ----------
   useFree() {
     this.mode = 'free';
+    this.world = false;
     this.free.visible = true;
     this.anchor.visible = false;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -144,6 +145,19 @@ export class Stage {
     this.resize();
   }
 
+  // the world-tracked page: the engine gives the projection directly
+  setWorldProjection(m) {
+    this.world = true;
+    this.camera.projectionMatrix.fromArray(m);
+    this.camera.projectionMatrixInverse.copy(this.camera.projectionMatrix).invert();
+    this.camera.position.set(0, 0, 0);
+    this.camera.quaternion.identity();
+    this.camera.matrixAutoUpdate = false;
+    this.camera.matrix.identity();
+    this.camera.updateMatrixWorld(true);
+    this.pointScale = (innerHeight * this.renderer.getPixelRatio() * m[5]) / 2;
+  }
+
   // where the card is now, in camera space
   setCardPose(p, q, s) {
     this.anchor.matrix.compose(_p.set(p[0], p[1], p[2]), _q.set(q[0], q[1], q[2], q[3]), _s.set(s, s, s));
@@ -159,6 +173,7 @@ export class Stage {
     this.renderer.setSize(w, h, false);
     this.canvas.style.width = w + 'px';
     this.canvas.style.height = h + 'px';
+    if (this.world) return;
     if (this.mode === 'ar' && this.ar) {
       const { proj: m, inputW, inputH, video } = this.ar;
       const vw = video.videoWidth, vh = video.videoHeight;

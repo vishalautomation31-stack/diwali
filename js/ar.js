@@ -9,8 +9,8 @@
 // the motion sensor guides it between runs. Its estimates go through PoseStabilizer (stabilize.js),
 // so the card moves smoothly with the hand and the wobble of single estimates never shows.
 import * as THREE from '../lib/three.module.min.js';
-import { PoseStabilizer, qMul, qConj, qRot } from './stabilize.js?v=8de2705763';
-import { Motion } from './motion.js?v=8de2705763';
+import { PoseStabilizer, qMul, qConj, qRot } from './stabilize.js?v=36bcaac838';
+import { Motion } from './motion.js?v=36bcaac838';
 
 const WARM = 3; // tracked frames before the card is shown
 const LATENCY = 70; // ms: how old a camera frame is by the time it is on screen

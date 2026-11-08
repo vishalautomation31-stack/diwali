@@ -1,6 +1,6 @@
 // The page: open the card from the key in the address, show the start screen, then play the
 // sequence on the printed card (camera) or full screen (no camera).
-import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=8de2705763';
+import { readKey, openCard, loadImage, loadJSON, loadAsset } from './js/card.js?v=36bcaac838';
 
 const $ = (s) => document.querySelector(s);
 const show = (el, on = true) => { el.hidden = !on; };
@@ -54,6 +54,8 @@ async function main() {
   // local test only: a fake camera from tools/dev (never on the live site)
   if (DEBUG && params.has('fakecam') && ['localhost', '127.0.0.1'].includes(location.hostname))
     await (await import('/dev/fakecam.js')).installFakeCam(params.get('fakecam'));
+  if (DEBUG && params.has('fakexr') && ['localhost', '127.0.0.1'].includes(location.hostname))
+    (await import('/dev/fakexr.js')).installFakeXR();
   const key = readKey();
   if (!key) { show($('#loader'), false); return; }
 
@@ -69,7 +71,7 @@ async function main() {
   if (params.has('show')) card.show = { sky: true, music: true };
 
   // three.js and the scene modules load in parallel with the art
-  const modsP = Promise.all([import('./js/stage.js?v=8de2705763'), import('./js/scene.js?v=8de2705763'), import('./js/sound.js?v=8de2705763')]);
+  const modsP = Promise.all([import('./js/stage.js?v=36bcaac838'), import('./js/scene.js?v=36bcaac838'), import('./js/sound.js?v=36bcaac838')]);
   const fontsP = Promise.all([document.fonts.load('400 112px "Eczar"'), document.fonts.load('600 100px "Teko"')]).catch(() => {});
   const names = Object.keys(card.assets || {});
   // Codex's layers 1 to 9, the optional near layers 10 to 13, a card's own parts 14 to 16, and their shadows
@@ -129,16 +131,19 @@ async function main() {
   log('ready', { layers: !!layers, mind: !!mind, diyas: sceneInfo?.diyas?.length });
 
   // the camera test runs while the start screen waits
-  const probeP = mind ? import('./js/ar.js?v=8de2705763').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
+  const probeP = card.surface ? Promise.resolve({ ok: true, note: 'surface' }) : mind ? import('./js/ar.js?v=36bcaac838').then((m) => m.probe(mind)).catch((e) => ({ ok: false, note: String(e) })) : Promise.resolve({ ok: false, note: 'no tracking target' });
   probeP.then((p) => { state.probe = p; log('probe', p); });
+  // the world-tracking engine is large: it comes down while the page is still loading
+  const surfaceP = card.surface ? import('./js/surface.js?v=36bcaac838').then(async (m) => { await m.loadEngine(); return m; }) : null;
+  surfaceP?.catch((e) => log('engine failed', e));
 
   // ---------- the loop ----------
   let last = performance.now();
-  function frame(now) {
+  function step(now) {
     const dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     if (state.playing && !document.hidden) state.t += dt;
-    scene.introFade = state.mode === 'ar';
+    scene.introFade = state.mode === 'ar' && !card.surface;
     if (state.ar) state.ar.frame(dt);
     scene.update(state.began ? state.t : 0, state.playing ? dt : 0, now / 1000);
     sound.update(state.playing ? scene.crackle : 0, dt);
@@ -147,16 +152,20 @@ async function main() {
       state.replayShown = true;
       show($('#replay'));
     }
+  }
+  function frame(now) {
+    if (!state.ar?.drives) step(now); // a card on a surface draws from the camera's own loop, in step with it
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
 
+  if (surfaceP) await Promise.race([surfaceP.catch(() => {}), new Promise((r) => setTimeout(r, 8000))]);
   show($('#loader'), false);
   document.body.classList.add('ready');
   show($('#start'));
 
   function begin() {
-    state.t = 0;
+    state.t = -(state.lead || 0); // a card on a surface lies closed for a moment first
     state.began = true;
     state.playing = true;
     state.replayShown = false;
@@ -167,13 +176,64 @@ async function main() {
 
   async function playFree() {
     state.mode = 'free';
+    state.lead = 0;
     if (state.ar) { state.ar.stop(); state.ar = null; }
-    document.body.classList.remove('ar', 'lit');
+    document.body.classList.remove('ar', 'lit', 'surface');
     show($('#hint'), false);
     show($('#nocam'), false);
     stage.useFree();
     stage.enableTilt();
     begin();
+  }
+
+  // No printed card: the greeting lands on whatever surface the phone is pointed at.
+  async function startSurface() {
+    state.mode = 'scanning';
+    document.body.classList.add('ar', 'surface');
+    const hint = $('#hint');
+    show(hint);
+    const offer = () => { if (!state.began) show($('#nocam')); };
+    const offerTimer = setTimeout(offer, 15000);
+    // a test link (?stats) says what is happening, so a real phone's trouble can be read off a screenshot
+    let line = null;
+    const note = (s) => {
+      if (!params.has('stats')) return;
+      if (!line) { line = document.createElement('div'); line.className = 'stats'; $('#ui').appendChild(line); }
+      line.textContent = s;
+    };
+    const giveUp = (e) => {
+      log('surface failed', e);
+      note('fell back to full screen: ' + (e?.message || JSON.stringify(e)));
+      clearTimeout(offerTimer);
+      if (state.mode !== 'free') playFree();
+    };
+    try {
+      note('loading the tracking engine');
+      const { SurfaceAR, OPENING } = await Promise.race([surfaceP, new Promise((_, no) => setTimeout(() => no(new Error('the engine took too long')), 12000))]);
+      stage.useAR(1);
+      scene.setCameraMode(false); // no printed card under it: no dark edge, and the wish floats a little
+      state.ar = new SurfaceAR({
+        container: $('#cam'),
+        stage,
+        clock: () => state.t,
+        draw: step,
+        onStats: note,
+        onHint: (h) => { hint.textContent = h === 'place' ? 'Tap to place' : 'Point at a table or the floor'; },
+        onError: giveUp,
+        onPlaced: () => {
+          clearTimeout(offerTimer);
+          document.body.classList.add('lit');
+          show(hint, false);
+          show($('#nocam'), false);
+          state.mode = 'ar';
+          state.lead = OPENING;
+          begin();
+        },
+      });
+      await state.ar.start();
+    } catch (e) {
+      giveUp(e);
+    }
   }
 
   $('#start').onclick = async () => {
@@ -187,6 +247,7 @@ async function main() {
     const p = state.probe || (await Promise.race([probeP, new Promise((r) => setTimeout(() => r({ ok: false, note: 'probe slow' }), 6000))]));
     await motionP;
     if (!p.ok || params.has('nocam')) return playFree();
+    if (card.surface) return startSurface();
     // camera
     state.mode = 'scanning';
     document.body.classList.add('ar');
@@ -194,7 +255,7 @@ async function main() {
     const offer = () => { if (state.mode === 'scanning' || state.mode === 'ar') show($('#nocam')); };
     const offerTimer = setTimeout(() => { if (!state.began) offer(); }, 8000);
     try {
-      const { CameraAR } = await import('./js/ar.js?v=8de2705763');
+      const { CameraAR } = await import('./js/ar.js?v=36bcaac838');
       state.ar = new CameraAR({
         container: $('#cam'),
         stage,

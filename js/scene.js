@@ -5,9 +5,9 @@
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=8de2705763';
-import { makeLine, makeImageLine } from './text.js?v=8de2705763';
-import { SkyShow, planShow } from './sky.js?v=8de2705763';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=36bcaac838';
+import { makeLine, makeImageLine } from './text.js?v=36bcaac838';
+import { SkyShow, planShow } from './sky.js?v=36bcaac838';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -327,7 +327,7 @@ export class CardScene {
       fountainsFrom = L[3];
     } else {
       volleys.push(L[2] + 1.2);
-      fountainsFrom = L[3];
+      fountainsFrom = L[3] ?? L[L.length - 1];
     }
     this.sky = new SkyShow(planShow({ draw: T.draw, fromWrite: T.fromWrite, quiet, volleys }), { fountainsFrom, finale: T.fromWrite[0], end: T.end });
     this.sky.onBurst = (power, x) => this.onBurst?.(power, x);
@@ -635,7 +635,9 @@ export class CardScene {
       u.uRelight.value = relight;
       u.uTime.value = time;
     }
-    this.print.material.uniforms.uOpacity.value = enter * (0.9 - 0.25 * smooth(d0, d0 + 0.6, t) + 0.25 * smooth(d1, d1 + 1.5, t));
+    // with no printed card under it, the outline only exists once the spark has written it
+    const inked = this.card.surface ? smooth(d1 - 0.3, d1 + 0.9, t) : 1;
+    this.print.material.uniforms.uOpacity.value = inked * enter * (0.9 - 0.25 * smooth(d0, d0 + 0.6, t) + 0.25 * smooth(d1, d1 + 1.5, t));
     const drawing = t >= d0 && t < d1;
     const flyingIn = ch === 'stars' && t >= d0 - ENTRY && t < d0;
     if (drawing) {

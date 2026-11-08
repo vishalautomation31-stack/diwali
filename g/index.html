@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#140f38">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' blob: data:; media-src 'self' blob: mediastream:; worker-src 'self' blob: data:; base-uri 'self'; form-action 'none'">
+<!-- World tracking: the XR Engine by Niantic Spatial, Inc. Copyright 2026 Niantic Spatial, Inc. Used under the XR Engine License Agreement (lib/xr/LICENSE), which disclaims all warranties. -->
+<title>Happy Diwali</title>
+<link rel="preload" href="fonts/eczar-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/teko-latin-600-clean.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="modulepreload" href="lib/three.module.min.js">
+<link rel="stylesheet" href="style.css?v=36bcaac838">
+</head>
+<body>
+<div id="app">
+  <div id="night" class="night" aria-hidden="true"></div>
+  <div id="cam" class="cam" aria-hidden="true"></div>
+  <canvas id="gl" class="gl" aria-hidden="true"></canvas>
+
+  <!-- only if the 3D page cannot run: the card as text -->
+  <section id="static" class="static" hidden>
+    <h1 id="s-name" class="s-name"></h1>
+    <div id="s-wish" class="s-wish"></div>
+    <p id="s-from" class="s-from"></p>
+  </section>
+
+  <div id="ui" class="ui">
+    <div id="loader" class="loader" role="progressbar" aria-label="Loading"></div>
+    <button id="start" class="btn btn-main" type="button" hidden>Tap to start</button>
+    <p id="hint" class="hint" hidden>Point at a table or the floor</p>
+    <button id="nocam" class="btn" type="button" hidden>Play without camera</button>
+    <button id="replay" class="btn" type="button" hidden>Replay</button>
+    <button id="sound" class="icon sound" type="button" hidden aria-label="Sound" aria-pressed="true"></button>
+    <button id="retry" class="icon" type="button" hidden aria-label="Try again">&#8635;</button>
+  </div>
+</div>
+<script type="module" src="app.js?v=36bcaac838"></script>
+</body>
+</html>

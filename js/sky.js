@@ -6,7 +6,7 @@
 // Each spark is a short streak from where it is back along its path, the way a real one reads to
 // the eye: long and thin while it is fast, a point of light when it has slowed and hangs.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=8de2705763';
+import { glowQuad, radialTexture } from './fx.js?v=36bcaac838';
 
 const STAR = 1, EMBER = 2, POP = 3, FOUNTAIN = 4;
 const MAX = 3000;
@@ -114,6 +114,7 @@ export class SkyShow {
     this.slow = 0;
     this.flash = 0;
     this.onBurst = null;
+    this.floor = -Infinity;
 
     this.pos = new Float32Array(MAX * 3);
     this.vel = new Float32Array(MAX * 3);
@@ -163,9 +164,19 @@ export class SkyShow {
       q.material.depthTest = false;
       q.position.set(x, y, z);
       this.group.add(q);
-      return { x, y, z, q, acc: 0, seed: x * 40 };
+      return { x, y, y0: y, z, q, acc: 0, seed: x * 40 };
     });
     this.reset();
+  }
+
+  // A card standing on a real surface: rockets go up from it, the fountains stand on it, and no
+  // spark falls through it. null for none.
+  setFloor(y) {
+    this.floor = y ?? -Infinity;
+    for (const f of this.fountains) {
+      f.y = y ?? f.y0;
+      f.q.position.y = f.y;
+    }
   }
 
   reset() {
@@ -199,8 +210,9 @@ export class SkyShow {
   }
 
   _launch(p) {
-    const [x, y, z] = place(p.zone, p.r);
-    const g = 0.55, x0 = x + (p.r[3] - 0.5) * 0.25, y0 = -1.5;
+    const [x, at, z] = place(p.zone, p.r);
+    const y = Math.max(at, this.floor + 0.5);
+    const g = 0.55, x0 = x + (p.r[3] - 0.5) * 0.25, y0 = Math.max(-1.5, this.floor);
     const vy = (y - y0) / p.flight + 0.5 * g * p.flight;
     this.rockets.push({ x: x0, y: y0, z, vx: (x - x0) / p.flight, vy, age: 0, g, flight: p.flight, style: p.style, power: p.power, palette: p.palette, clock: 0 });
   }
@@ -315,6 +327,7 @@ export class SkyShow {
       const d = Math.exp(-this.drag[i] * dt);
       const vx = this.vel[a3] * d, vy = this.vel[a3 + 1] * d - this.grav[i] * dt, vz = this.vel[a3 + 2] * d;
       const x = this.pos[a3] + vx * dt, y = this.pos[a3 + 1] + vy * dt, z = this.pos[a3 + 2] + vz * dt;
+      if (y < this.floor) continue;
       const r = this.col[a3], g = this.col[a3 + 1], b = this.col[a3 + 2];
       let clock = this.clock[i];
       const every = this.every[i];
