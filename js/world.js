@@ -3,9 +3,10 @@
 // petals that fall and stay, and dust in the air. World units are card widths: x along the card, y up
 // from the surface, +z towards whoever placed it. All of it is a function of t, so Replay is exact.
 import * as THREE from '../lib/three.module.min.js';
-import { radialTexture } from './fx.js?v=748e8ec2ef';
-import { paintStrand, paintSwag } from './marigold.js?v=748e8ec2ef';
-import { Sprites, FREE, STAND, FLAT, canvasTexture, flameTexture } from './sprites.js?v=748e8ec2ef';
+import { radialTexture } from './fx.js?v=72b5265625';
+import { paintStrand, paintSwag } from './marigold.js?v=72b5265625';
+import { Sprites, FREE, STAND, FLAT, canvasTexture, flameTexture } from './sprites.js?v=72b5265625';
+import { paintSun, paintRay } from './sunrise.js?v=72b5265625';
 
 const DEG = Math.PI / 180;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
@@ -173,6 +174,34 @@ export class World {
     this._buildLanterns();
     this._buildLights();
     this._buildAir();
+    if (scene.dawn) this._buildSun();
+  }
+
+  // A sun that comes up out of the surface, behind the card and behind all that hangs in the room.
+  // Drawn first of all: the card's depth keeps it behind the card, and all the rest paints over it.
+  _buildSun() {
+    const S = (this.sun = { z: -2.3, r: 0.7, top: 1.06 });
+    S.rays = Array.from({ length: 14 }, (_, k) => ({ a: (k / 14) * Math.PI * 2 + this.rnd() * 0.16, len: 2.1 + this.rnd() * 1.2, w: 0.5 + this.rnd() * 0.35, phase: this.rnd() * 6.28 }));
+    S.rayBatch = this._add(new Sprites(paintRay(), S.rays.length, { additive: true, order: 0.2, anchor: 0, floor: true }));
+    S.halo = this._add(new Sprites(radialTexture([[0, 'rgba(255,214,140,0.95)'], [0.22, 'rgba(255,170,80,0.5)'], [0.55, 'rgba(255,130,50,0.14)'], [1, 'rgba(255,110,40,0)']], 256), 1, { additive: true, order: 0.3 }));
+    S.disc = this._add(new Sprites(paintSun(), 1, { order: 0.5, floor: true }));
+    S.road = this._add(new Sprites(radialTexture([[0, 'rgba(255,190,110,0.85)'], [0.4, 'rgba(255,150,70,0.3)'], [1, 'rgba(255,120,50,0)']], 128), 1, { additive: true, order: 100.5 }));
+  }
+
+  _updateSun(t, time) {
+    const S = this.sun, c = this.scene;
+    const h = c._sunHeight(t), day = c._daylight(t);
+    const low = -S.r - 0.1;
+    const y = low + h * (S.top - low);
+    S.disc.set(0, 0, y, S.z, 2 * S.r, 2 * S.r, 0, STAND, 1, 1, 1, h > 0 ? 1 : 0);
+    S.disc.flush();
+    const glow = 6 * S.r * (0.97 + 0.03 * Math.sin(time * 0.7));
+    S.halo.set(0, 0, y, S.z - 0.01, glow, glow, 0, STAND, 1, 1, 1, smooth(0, 0.5, h) * (0.5 + 0.5 * day));
+    S.halo.flush();
+    S.rays.forEach((r, i) => S.rayBatch.set(i, 0, y, S.z - 0.02, r.w, r.len * (0.92 + 0.08 * Math.sin(time * 0.5 + r.phase)), r.a + time * 0.02, STAND, 1, 0.82, 0.55, (0.34 + 0.08 * Math.sin(time * 0.9 + r.phase)) * day));
+    S.rayBatch.flush();
+    S.road.set(0, 0, 0.003, 0.7, 1.6, 4.6, 0, FLAT, 1, 1, 1, 0.3 * day);
+    S.road.flush();
   }
 
   _add(batch) {
@@ -424,5 +453,6 @@ export class World {
       this.moteBatch.set(i, p.x + Math.sin(time * 0.17 + p.phase) * 0.12, p.y + Math.sin(time * 0.23 + p.phase * 2) * 0.1, p.z + Math.cos(time * 0.13 + p.phase) * 0.12, p.size, p.size, 0, FREE, 1, 1, 1, Math.max(0, a));
     });
     this.moteBatch.flush();
+    if (this.sun) this._updateSun(t, time);
   }
 }

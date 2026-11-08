@@ -1,12 +1,12 @@
 // Fireworks all around the card: rockets rise from behind it, burst in the space around it, and
-// fountains burn below it. Everything sits behind the card in depth and is drawn before it, so the
+// fountains burn below it. All of it sits behind the card in depth and is drawn before it, so the
 // card covers what passes behind it, and it all moves with the card. Card units: width 1, y up, +z
 // towards the viewer, the card at z = 0. Only cards that ask for it build this.
 //
 // Each spark is a short streak from where it is back along its path, the way a real one reads to
 // the eye: long and thin while it is fast, a point of light when it has slowed and hangs.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=748e8ec2ef';
+import { glowQuad, radialTexture } from './fx.js?v=72b5265625';
 
 const STAR = 1, EMBER = 2, POP = 3, FOUNTAIN = 4;
 const MAX = 3000;
@@ -326,7 +326,7 @@ export class SkyShow {
       }
     }
 
-    // everything in the air
+    // all that is in the air
     const head = this.aHead.array, tail = this.aTail.array, tint = this.aCol.array, wide = this.aW.array, glow = this.aA.array;
     const n0 = this.n;
     let j = 0;

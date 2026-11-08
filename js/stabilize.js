@@ -79,7 +79,7 @@ export class PoseStabilizer {
   }
 
   // The camera turned by dq (its rotation since the last call, in its own frame). The card stays
-  // where it is in the world, so in camera space everything turns the other way, at once.
+  // where it is in the world, so in camera space the whole scene turns the other way, at once.
   cameraRotated(dq) {
     const inv = qConj(dq);
     for (const pose of [this.target, this.mid, this.shown, this.pending]) {

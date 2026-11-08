@@ -37,7 +37,8 @@ export function flameTexture() {
 
 export class Sprites {
   // anchor: 0 the picture's foot is at its position, 1 its top (it hangs and swings from there), 0.5 its middle
-  constructor(map, n, { additive = false, order = 100, anchor = 0.5 } = {}) {
+  // floor: nothing shows below the surface, so a picture can rise out of it
+  constructor(map, n, { additive = false, order = 100, anchor = 0.5, floor = false } = {}) {
     this.n = n;
     const g = new THREE.InstancedBufferGeometry();
     g.setAttribute('corner', new THREE.BufferAttribute(new Float32Array([-0.5, 0, 0.5, 0, -0.5, 1, 0.5, 1]), 2));
@@ -53,16 +54,23 @@ export class Sprites {
     this.aCol = inst('iCol', 4);
     g.instanceCount = n;
     this.mat = new THREE.ShaderMaterial({
+      defines: floor ? { FLOOR: 1 } : {},
       uniforms: { map: { value: map }, uAnchor: { value: anchor } },
       vertexShader: /* glsl */ `
         attribute vec2 corner; attribute vec3 iPos; attribute vec4 iSize; attribute vec4 iCol;
         uniform float uAnchor; varying vec2 vUv; varying vec4 vCol;
+        #ifdef FLOOR
+        varying float vH;
+        #endif
         void main() {
           vUv = vec2(corner.x + 0.5, corner.y);
           vCol = iCol;
           float c = cos(iSize.z), s = sin(iSize.z);
           vec2 q = vec2(corner.x * iSize.x, (corner.y - uAnchor) * iSize.y);
           q = vec2(c * q.x - s * q.y, s * q.x + c * q.y);
+          #ifdef FLOOR
+          vH = iPos.y + q.y;
+          #endif
           vec4 mv;
           if (iSize.w > 1.5) {
             mv = modelViewMatrix * vec4(iPos + vec3(q.x, 0.0, -q.y), 1.0);
@@ -81,9 +89,15 @@ export class Sprites {
         }`,
       fragmentShader: /* glsl */ `
         uniform sampler2D map; varying vec2 vUv; varying vec4 vCol;
+        #ifdef FLOOR
+        varying float vH;
+        #endif
         void main() {
           vec4 c = texture2D(map, vUv);
           float a = c.a * vCol.a;
+          #ifdef FLOOR
+          a *= smoothstep(0.0, 0.04, vH);
+          #endif
           if (a < 0.004) discard;
           gl_FragColor = vec4(c.rgb * vCol.rgb, a);
           #include <colorspace_fragment>

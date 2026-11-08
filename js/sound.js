@@ -37,7 +37,7 @@ export class Crackle {
   // For cards with the sky show: light music underneath, and each firework heard as it bursts.
   // Writing the music takes a moment on a phone: done at the tap, while the camera is opening.
   prepareMusic() {
-    this.musicReady ||= (this.tune === 'tender' ? import('./tender.js?v=748e8ec2ef') : import('./music.js?v=748e8ec2ef')).then(({ renderMusic }) => new Promise((res) => setTimeout(() => res(renderMusic()), 30)));
+    this.musicReady ||= (this.tune === 'tender' ? import('./tender.js?v=72b5265625') : import('./music.js?v=72b5265625')).then(({ renderMusic }) => new Promise((res) => setTimeout(() => res(renderMusic()), 30)));
     return this.musicReady;
   }
 

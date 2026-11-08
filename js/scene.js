@@ -1,15 +1,16 @@
-// The card, alive. Everything is in card units: width 1, height 1.4, origin at the card's
+// The card, alive. All of it is in card units: width 1, height 1.4, origin at the card's
 // centre, y up, +z off the card towards the viewer. The same group is drawn full screen
 // (no camera) or pinned to the printed card (camera).
 //
 // The sequence is a pure function of t (seconds since it began), so Replay is exact.
 // Times follow the brief, section 5; each card's choreography follows its own words.
 import * as THREE from '../lib/three.module.min.js';
-import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=748e8ec2ef';
-import { makeLine, makeImageLine } from './text.js?v=748e8ec2ef';
-import { SkyShow, planShow } from './sky.js?v=748e8ec2ef';
-import { paintStrand, paintSwag } from './marigold.js?v=748e8ec2ef';
-import { Sprites, FREE } from './sprites.js?v=748e8ec2ef';
+import { buildNamePath, pathPoint, ribbonGeometry, trailMaterial, printMaterial, Sparks, StarField, smokeDrift, glowQuad, radialTexture, starTexture } from './fx.js?v=72b5265625';
+import { makeLine, makeImageLine } from './text.js?v=72b5265625';
+import { SkyShow, planShow } from './sky.js?v=72b5265625';
+import { paintStrand, paintSwag } from './marigold.js?v=72b5265625';
+import { Sprites, FREE } from './sprites.js?v=72b5265625';
+import { paintSun } from './sunrise.js?v=72b5265625';
 
 export const CARD_H = 1.4;
 const clamp01 = (x) => Math.min(1, Math.max(0, x));
@@ -37,6 +38,7 @@ const ENTRY = 0.8; // seconds the spark takes to fly in from outside the frame (
 const LAYER_Z = { 1: 0, 2: 0.016, 3: 0.04, 4: 0.075, 5: 0.1, 6: 0.102, 7: 0.103, 8: 0.105, 9: 0.112, 10: 0.095, 11: 0.096, 12: 0.12, 13: 0.11 };
 const DRAW_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 9];
 const LIT = new Set([7, 11]);
+const _warm = new THREE.Color();
 const MAX_DIYAS = 24;
 
 const LIT_VS = /* glsl */ `varying vec2 vUv; varying vec2 vP; void main() { vUv = uv; vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -67,9 +69,12 @@ export class CardScene {
     this.T = { ...TIMES, ...(card.times || {}), lines: card.times?.lines || TIMES.lines[this.choreo] };
     // one card keeps its light back until two of its image lines have arrived
     this.bridge = this.motion === 'bridge' ? { glow: this.T.lines[card.lines.length + 1], show: this.T.lines[card.lines.length + 2] } : null;
+    // one card has a sun: part way up on its first line, down for one line, all the way up for the next
+    this.dawn = this.motion === 'dawn' ? { out: this.T.lines[3], up: this.T.lines[4] } : null;
+    if (this.dawn) this._planDawn();
     this.root = new THREE.Group();
     this.root.name = 'card';
-    this.content = new THREE.Group(); // everything that lifts and lights
+    this.content = new THREE.Group(); // all that lifts and lights
     this.content.matrixAutoUpdate = false; // setShear()
     this.root.add(this.content);
     this.pointScale = 800;
@@ -93,7 +98,7 @@ export class CardScene {
     this.reset();
   }
 
-  // Slides everything by its height above the card: the depth cue in camera mode.
+  // Slides each thing by its height above the card: the depth cue in camera mode.
   setShear(sx, sy) {
     this.content.matrix.set(1, 0, sx, 0, 0, 1, sy, 0, 0, 0, 1, 0, 0, 0, 0, 1);
   }
@@ -255,6 +260,15 @@ export class CardScene {
     this.content.add(this.pool);
   }
 
+  // when the setting goes out and comes back, for the card with a sun
+  _planDawn() {
+    const { out, up } = this.dawn;
+    this.lamp = {
+      cityOut: [out + 0.3, out + 1.3], stringsOut: [out + 0.7, out + 1.5], lastOut: out + 1.7,
+      t0: up, passEnd: up + 1.1, cityBack: [up + 0.4, up + 1.4], stringsBack: [up + 0.5, up + 1.5], name: up + 1,
+    };
+  }
+
   _span(out, back, t) {
     return smooth(out[0], out[1], t) * (1 - smooth(back[0], back[1], t));
   }
@@ -266,7 +280,7 @@ export class CardScene {
 
   // only this choreography darkens layers one by one
   _layerLight(n, t) {
-    if (this.choreo !== 'lamp') return 1;
+    if (!this.lamp) return 1;
     if (n === 2 || n === 3) return 1 - 0.8 * this._cityGone(t);
     if (n === 8) return 1 - 0.8 * this._stringsGone(t);
     return 1;
@@ -396,6 +410,56 @@ export class CardScene {
     if (this.choreo === 'lamp') this._buildToran();
     if (this.motion === 'bulbs') this._buildBulbs();
     if (this.motion === 'climb') this._buildComets();
+    if (this.dawn) this._buildDawn();
+  }
+
+  _buildDawn() {
+    // the card's own sky warms from the horizon up
+    const c = document.createElement('canvas');
+    c.width = 4;
+    c.height = 256;
+    const g = c.getContext('2d');
+    const fill = g.createLinearGradient(0, 256, 0, 0);
+    fill.addColorStop(0, 'rgba(255,170,84,1)');
+    fill.addColorStop(0.35, 'rgba(255,124,90,0.85)');
+    fill.addColorStop(0.75, 'rgba(206,92,134,0.42)');
+    fill.addColorStop(1, 'rgba(124,64,144,0.12)');
+    g.fillStyle = fill;
+    g.fillRect(0, 0, 4, 256);
+    this.dawnSky = new THREE.Mesh(new THREE.PlaneGeometry(1, 0.86), new THREE.MeshBasicMaterial({ map: this._tex(c), transparent: true, depthWrite: false, opacity: 0, blending: THREE.AdditiveBlending, toneMapped: false }));
+    this.dawnSky.position.set(0, 0.27, 0.002);
+    this.dawnSky.renderOrder = 11.6;
+    this.content.add(this.dawnSky);
+    // with no room round the card, the sun comes up behind the card all the same, clear of the words
+    this.dawnHalo = glowQuad(radialTexture([[0, 'rgba(255,214,140,0.9)'], [0.3, 'rgba(255,160,76,0.4)'], [1, 'rgba(255,110,40,0)']], 256), 2.6, '#ffffff', 2.4);
+    this.dawnDisc = new THREE.Mesh(new THREE.PlaneGeometry(0.84, 0.84), new THREE.MeshBasicMaterial({ map: paintSun(), transparent: true, depthWrite: false, toneMapped: false }));
+    this.dawnDisc.renderOrder = 2.5;
+    this.root.add(this.dawnHalo, this.dawnDisc);
+  }
+
+  // how high the sun stands, 0 (below the horizon) to 1
+  _sunHeight(t) {
+    const { out, up } = this.dawn;
+    const first = 0.66 * easeOut((t - this.T.lines[0] + 0.2) / 2.4);
+    return Math.max(first * (1 - smooth(out + 0.2, out + 1.8, t)), easeOut((t - up - 0.1) / 3));
+  }
+
+  _daylight(t) {
+    return smooth(this.dawn.up + 0.3, this.dawn.up + 2.6, t);
+  }
+
+  _riseSun(t) {
+    const h = this._sunHeight(t), day = this._daylight(t);
+    this.dawnSky.material.opacity = 0.3 * h * h + 0.7 * day;
+    this.dawnDisc.visible = this.dawnHalo.visible = !this.roomSun && h > 0;
+    const y = 0.2 + h * 0.66;
+    this.dawnDisc.position.set(0, y, -0.1);
+    this.dawnHalo.position.set(0, y, -0.11);
+    this.dawnHalo.material.opacity = smooth(0, 0.5, h) * (0.5 + 0.5 * day);
+    if (day > 0) {
+      _warm.setRGB(1 + 0.2 * day, 1 + 0.07 * day, 1 - 0.05 * day);
+      for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.multiply(_warm);
+    }
   }
 
   // Each letter a little higher than the one before.
@@ -496,7 +560,7 @@ export class CardScene {
 
   // Small stars across the open sky, coming up outwards from the name. Never inside the name's
   // box, so its letters stay clean. Fixed positions: Replay is exact. They sit just over the sky
-  // layer, so everything in front of the sky (the city, the house) covers them.
+  // layer, so whatever is in front of the sky (the city, the house) covers them.
   _buildStars() {
     const box = this.card.geom.box;
     const cx = (box[0] + box[2]) / 2, cy = (box[1] + box[3]) / 2;
@@ -574,6 +638,10 @@ export class CardScene {
       quiet = [[L[1] - 0.3, L[2] + 0.3]];
       volleys.push(L[2] + 0.7, L[3] + 0.3);
       fountainsFrom = L[3];
+    } else if (this.dawn) {
+      quiet = [[L[3] - 1.2, L[5]]];
+      volleys.push(L[1] + 0.4, L[5] + 0.1);
+      fountainsFrom = L[5];
     } else if (this.choreo === 'lamp') {
       quiet = [[L[2] - 1.2, L[4]]]; // nothing bursts while it is dark, and the last sparks have fallen by then
       volleys.push(L[1] + 0.4, L[4] + 0.1);
@@ -593,6 +661,7 @@ export class CardScene {
   _kidRate(t) {
     if (t < 1.0) return 0;
     if (this.bridge) return 0.6;
+    if (this.dawn) return 0.65 * (1 - smooth(this.dawn.out, this.dawn.out + 0.8, t) + smooth(this.dawn.up + 1, this.dawn.up + 2, t));
     if (this.choreo === 'lamp') return 0.65 * (1 - smooth(this.T.lines[2] - 0.1, this.T.lines[2] + 0.8, t) + smooth(this.T.lines[4], this.T.lines[4] + 0.8, t));
     if (this.choreo === 'stars') return 0.65 * (1 - 0.8 * this._quiet(t));
     if (this.choreo === 'fade') {
@@ -606,6 +675,7 @@ export class CardScene {
   _fireworksOn(t) {
     if (t < 1.8) return false;
     if (this.bridge) return t > this.bridge.show;
+    if (this.dawn) return t < this.dawn.out - 0.3 || t > this.T.lines[5];
     if (this.choreo === 'lamp') return t < this.T.lines[2] - 0.3 || t > this.T.lines[4];
     // none under the words
     if (this.choreo === 'stars') return t < this.T.lines[0] || t > this.T.fromWrite[0];
@@ -704,8 +774,9 @@ export class CardScene {
     this.veil.position.set(0, -0.04, -0.012);
     this.veil.renderOrder = 75;
     this.words.add(this.veil);
-    this.lineObjs = this.card.lines.map((text) => {
-      const L = makeLine(text, this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' || this.motion ? { size: this.bridge ? 0.074 : this.card.surface ? 0.08 : 0.072, maxWidth: this.bridge ? 0.76 : 0.7, phrases: /,\s/.test(text) || !!this.bridge, noOrphan: !!this.bridge } : { size: 0.072, maxWidth: 0.78 });
+    const last = this.card.lines.length - 1;
+    this.lineObjs = this.card.lines.map((text, k) => {
+      const L = makeLine(text, this.dawn ? { size: 0.074, maxWidth: 0.78, phrases: k < last, noOrphan: true } : this.choreo === 'stars' ? { size: 0.072, maxWidth: 0.86, phrases: true } : this.choreo === 'lamp' || this.motion ? { size: this.bridge ? 0.074 : this.card.surface ? 0.08 : 0.072, maxWidth: this.bridge ? 0.76 : 0.7, phrases: /,\s/.test(text) || !!this.bridge, noOrphan: !!this.bridge } : { size: 0.072, maxWidth: 0.78 });
       this.words.add(L.group);
       return L;
     });
@@ -879,6 +950,7 @@ export class CardScene {
     // the sky show lights the card a little as each one bursts
     const night = this._night(t) + (this.sky ? 0.09 * this.sky.flash : 0);
     for (const l of this.layers) if (!l.lit && l.mesh.material.color) l.mesh.material.color.setScalar(night * this._layerLight(l.n, t));
+    if (this.dawn) this._riseSun(t);
     const enter = this.introFade ? smooth(0, 0.35, t) : 1; // camera: fade the render in over the print
     this.plate.material.opacity = enter;
     for (const l of this.layers) {
@@ -905,7 +977,7 @@ export class CardScene {
       u.uTime.value = time;
     }
     // with no printed card under it, the outline only exists once the spark has written it
-    const inked = (this.card.surface ? smooth(d1 - 0.3, d1 + 0.9, t) : 1) * (ch === 'lamp' ? 1 - 0.8 * this._nameOut(t) : 1);
+    const inked = (this.card.surface ? smooth(d1 - 0.3, d1 + 0.9, t) : 1) * (this.lamp ? 1 - 0.8 * this._nameOut(t) : 1);
     this.print.material.uniforms.uOpacity.value = inked * enter * (0.9 - 0.25 * smooth(d0, d0 + 0.6, t) + 0.25 * smooth(d1, d1 + 1.5, t));
     const drawing = t >= d0 && t < d1;
     const flyingIn = ch === 'stars' && t >= d0 - ENTRY && t < d0;
@@ -1002,7 +1074,7 @@ export class CardScene {
 
   _night(t) {
     if (this.bridge) return 0.62 + 0.38 * smooth(this.bridge.glow, this.bridge.glow + 1.6, t);
-    if (this.choreo === 'lamp') {
+    if (this.lamp) {
       const L = this.T.lines;
       return (0.8 + 0.2 * smooth(L[0], L[0] + 2.6, t)) * (1 - 0.82 * this._terraceDark(t));
     }
@@ -1021,6 +1093,11 @@ export class CardScene {
 
   _nameGlow(t) {
     const d1 = this.T.draw[1];
+    if (this.dawn) {
+      const L = this.T.lines;
+      const low = 1 - 0.8 * smooth(d1 + 0.1, L[0] + 2.2, t);
+      return Math.max(Math.max(low, smooth(L[2] + 1.0, L[2] + 2.0, t)) * (1 - smooth(this.lamp.cityOut[0], this.lamp.cityOut[1], t)), smooth(this.lamp.name, this.lamp.name + 0.9, t));
+    }
     if (this.bridge) {
       const low = 1 - 0.8 * smooth(d1 + 0.1, this.T.lines[0] + 2.2, t);
       return Math.max(low, smooth(this.bridge.glow + 0.9, this.bridge.glow + 1.9, t));
@@ -1111,6 +1188,7 @@ export class CardScene {
           boost = 1 + 0.7 * smooth(L[1] + 0.1, L[1] + 1.1, t);
         }
       }
+      if (this.dawn) level *= 1 - this._span([this.dawn.out + 0.5 + i * 0.05, this.dawn.out + 0.8 + i * 0.05], [this.dawn.up + 1 + i * 0.05, this.dawn.up + 1.3 + i * 0.05], t);
       const flick = 0.86 + 0.1 * Math.sin(time * 11.0 + d.seed) + 0.06 * Math.sin(time * 23.0 + d.seed * 2.1);
       d.level = level;
       d.glow.material.opacity = level * flick * (d.big ? 0.9 : 0.6);

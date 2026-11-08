@@ -3,10 +3,10 @@
 // Agreement: lib/xr/LICENSE). The engine draws the camera on its own canvas under the page's; this
 // file turns its camera pose into the card's pose, and leaves the rest of the page as it is.
 import * as THREE from '../lib/three.module.min.js';
-import { glowQuad, radialTexture } from './fx.js?v=748e8ec2ef';
-import { CARD_H } from './scene.js?v=748e8ec2ef';
-import { World } from './world.js?v=748e8ec2ef';
-import { flameTexture } from './sprites.js?v=748e8ec2ef';
+import { glowQuad, radialTexture } from './fx.js?v=72b5265625';
+import { CARD_H } from './scene.js?v=72b5265625';
+import { World } from './world.js?v=72b5265625';
+import { flameTexture } from './sprites.js?v=72b5265625';
 
 const CAMERA_Y = 1.3;    // how high the engine's world puts the camera; the surface is y = 0
 const AIM_Y = -0.2;      // where on the screen the flame sits (-1 bottom, 1 top): the card stands up from there
@@ -150,12 +150,13 @@ export class SurfaceAR {
     this.back = new THREE.Mesh(new THREE.PlaneGeometry(1, CARD_H), new THREE.MeshBasicMaterial({ color: '#1a1445', side: THREE.BackSide, toneMapped: false }));
     this.back.position.z = -0.001;
     this.stage.card.root.add(this.back);
-    // everything in the room is drawn after the card; this keeps what is behind the card behind it
+    // what is in the room is drawn after the card; this keeps what is behind the card behind it
     this.proxy = new THREE.Mesh(new THREE.PlaneGeometry(1, CARD_H), new THREE.MeshBasicMaterial({ colorWrite: false, side: THREE.DoubleSide }));
     this.proxy.position.z = -0.004;
     this.proxy.renderOrder = -1;
     this.stage.card.root.add(this.proxy);
     this.world = new World(this.stage.card);
+    this.stage.card.roomSun = true; // with a room round the card, any sun stands in the room
     this.world.group.visible = false;
     this.stage.scene.add(this.world.group);
     this.world.warm(this.stage.renderer);
@@ -279,6 +280,7 @@ export class SurfaceAR {
     const card = this.stage.card;
     document.body.classList.toggle('blackout', !!card.lamp && card._terraceDark(t) > 0.4);
     document.body.classList.toggle('hush', !!card.bridge && t < card.bridge.glow + 0.2);
+    document.body.classList.toggle('daylight', !!card.dawn && t > card.dawn.up + 0.5);
   }
 
   stop() {
@@ -291,7 +293,8 @@ export class SurfaceAR {
     this.back?.removeFromParent();
     this.proxy?.removeFromParent();
     if (this.world) this.stage.scene.remove(this.world.group);
-    document.body.classList.remove('blackout', 'hush');
+    document.body.classList.remove('blackout', 'hush', 'daylight');
+    this.stage.card.roomSun = false;
     const sky = this.stage.card.sky;
     if (sky) {
       sky.group.rotation.x = 0;
